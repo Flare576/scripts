@@ -31,4 +31,7 @@ elif [ ! -s "$zoom" ]; then
   echo "Dummy $zoom file already present; You probably ran the script twice, no big deal."
 fi
 
+echo "Setting Zoom to default to video off"
+defaults write $HOME/Library/Preferences/us.zoom.config.plist ZDisableVideo 1
+
 echo "You're a little safer now"
