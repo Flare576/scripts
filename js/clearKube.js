@@ -1,59 +1,41 @@
 #!/bin/sh
-':' /*; 
-# Put any node dependencies here
-dependencies=(
+':' /*; # Put any node dependencies here (and see Readme)
+d=(
   inquirer
   yargs
-)
-# Don't edit past here
-current=$(npm -g list 2> /dev/null | grep '^├')
-for dep in ${dependencies[@]}; do
-  if ! [[ $current =~ "$dep@" ]]; then
-    echo "Installing $dep"
-    npm i -g $dep 
-  fi
-done
-':' */
-':' //;NODE_PATH=$(npm -g root) exec "$(command -v nodejs || command -v node)" "$0" "$@"
-console.log("actual script starting");
+); c=$(npm -g list 2> /dev/null | grep '^├' | cut -d ' ' -f2)
+for i in ${d[@]}; do if ! [[ $c =~ "$i@" ]]; then echo "Installing $i"; npm install -g $i; fi; done; ':' */
+':' //;NODE_PATH=$(npm -g root) exec node "$0" "$@"
 const {execSync, exec} = require('child_process');
 const argv = require('yargs').argv;
 const inquirer = require('inquirer');
 
-let namespace;
-let context = argv.context;
+(async () => {
+    if (argv.h) {
+        console.log('You must provide a --context. You may provide a --namespace, or let this script help you choose.');
+        return 0;
+    }
 
-if (!context) {
-    console.log('Must provide context; trust, but verify.');
-    return 1;
-}
+    let namespace;
+    let context = argv.context;
 
-if (argv._.length === 1) {
-    namespace = argv._[0];
-    clearPods(context, namespace);
-} else {
-    const allNS = execSync(`kubectl get namespaces --context ${context}`, { encoding: 'utf8' })
-    .trim()
-    .split('\n')
-    .slice(1) // Remove header row
-    .map(ns => ns.split(/\s+/)[0]);
+    if (!context) {
+        console.log('Must provide context; trust, but verify.');
+        return 1;
+    }
 
-    console.log(allNS);
-    inquirer.prompt([{ type: 'list', name: 'namespace', message: 'Which namespace to clear?', choices: allNS }])
-    .then(answers => {
+    if (argv._.length === 1) {
+        namespace = argv._[0];
+    } else {
+        const allNS = cmdToList(`kubectl get namespaces --context ${context}`)
+        const answers = await inquirer.prompt([{ type: 'list', name: 'namespace', message: 'Which namespace to clear?', choices: allNS }])
         namespace = answers.namespace;
-        clearPods(context, namespace);
-    });
-}
+    }
+    clearPods(context, namespace);
+})();
 
 function clearPods (context, namespace) {
-    const result = execSync(`kubectl get pods -n ${namespace} --context ${context}`, { encoding: 'utf8' });
-    const output = [];
-    result
-        .trim()
-        .split('\n')
-        .slice(1)
-        .map(ns => ns.split(/\s+/)[0])
+    cmdToList(`kubectl get pods -n ${namespace} --context ${context}`)
         .forEach((podName) => {
             exec(`kubectl delete pods -n ${namespace} --context ${context} ${podName}`, (err, data) => {
                 if (err)
@@ -62,3 +44,12 @@ function clearPods (context, namespace) {
             })
         })
 }
+
+function cmdToList (cmd) {
+    return execSync(cmd, { encoding: 'utf8' })
+            .trim()
+            .split('\n')
+            .slice(1) // Remove header row
+            .map(ns => ns.split(/\s+/)[0]);
+}
+
