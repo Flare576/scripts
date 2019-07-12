@@ -15,7 +15,7 @@ Fun enough, bash is actually the thing that starts executing this script.
 ':' /*; 
 ```
 
-':' is a (bash no-op)[https://stackoverflow.com/questions/12404661/what-is-the-use-case-of-noop-in-bash] and is used
+':' is a [bash no-op](https://stackoverflow.com/questions/12404661/what-is-the-use-case-of-noop-in-bash) and is used
  here to make bash ignore the next piece of input. Node basically does the same; a string by itself on a line is valid,
  albeit useless. The `/*` starts a Javascript comment, and so the semi colon is ignored, and bash treats the `/*` as the
 input to the no-op, then sees the semi-colon as the command terminator.
@@ -29,8 +29,8 @@ dependencies=(
 ```
 
 To avoid cluttering your scripts folder, these will be installed globally and then included via NODE_PATH for this 
-sub-shell. If you're not going to use (inquirer)[https://www.npmjs.com/package/inquirer] or
- (yargs)[https://www.npmjs.com/package/yargs], feel free to remove them, but they're pretty awesome.
+sub-shell. If you're not going to use [inquirer](https://www.npmjs.com/package/inquirer) or
+ [yargs](https://www.npmjs.com/package/yargs), feel free to remove them, but they're pretty awesome.
 
 ```
 current=$(npm -g list 2> /dev/null | grep '^├' | cut -d ' ' -f2)
