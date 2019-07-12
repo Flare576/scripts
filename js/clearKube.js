@@ -3,7 +3,7 @@
 d=(
   inquirer
   yargs
-); c=$(npm -g list 2> /dev/null | grep '^├' | cut -d ' ' -f2)
+); c=$(npm -g --depth 0 list 2> /dev/null | cut -d ' ' -f2)
 for i in ${d[@]}; do if ! [[ $c =~ "$i@" ]]; then echo "Installing $i"; npm install -g $i; fi; done; ':' */
 ':' //;NODE_PATH=$(npm -g root) exec node "$0" "$@"
 const {execSync, exec} = require('child_process');
