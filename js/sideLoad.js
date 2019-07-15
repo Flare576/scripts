@@ -12,7 +12,7 @@ Module.prototype.require = function (path) {
         console.log(`Installing ${path}`);
         execSync(`npm -g install ${path}`, { encoding: 'utf8' });
         const len = process.argv.length;
-        if (len > 1 && process.argv[len - 1] === scriptFlag) {
+        if (len > 2 && process.argv[len - 1] === scriptFlag) {
             process.exit(depFlag);
         }
         process.argv.shift();
