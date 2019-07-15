@@ -15,6 +15,9 @@ exists and what does not.
 
 ## How it works
 
+To make this work, you need to have a side load script, you can check out `sideLoad.js` to see what I mean (explained
+below). Let's look at `test.js`, which has the 2 lines you need to include in all of your JS-shell scripts.
+
 ```
 #!/bin/sh
 ```
@@ -36,7 +39,7 @@ Firstly, it imports `module`, yes **that** module, and overrides `require`, yes 
 normal process, and if it works, everything goes as if `sideLoad.js` isn't even there.
 
 If something isn't found, we jump to action and run an `npm -g install` of the package. Then, we add a flag we can
-detect to the command arguments and spin off a child NodeJS project. Why? Node was running before the module existed,
+detect to the command arguments and spin off a child NodeJS process. Why? Node was running before the module existed,
 and there's no way to tell Node to re-load it's inventory. 
 
 That child process attempts to do the same thing, and if **IT** finds a missing dependency, it also installs it.
