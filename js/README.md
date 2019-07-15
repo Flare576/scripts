@@ -38,21 +38,20 @@ can see our global modules, then `exec` lets us use the current sub-shell and th
 Firstly, it imports `module`, yes **that** module, and overrides `require`, yes **that** require. It attempts to run the
 normal process, and if it works, everything goes as if `sideLoad.js` isn't even there.
 
-If something isn't found, we jump to action and run an `npm -g install` of the package. Then, we add a flag we can
+If a module isn't found, we jump to action and run an `npm -g install` of the package. Then, we add a flag we can
 detect to the command arguments and spin off a child NodeJS process. Why? Node was running before the module existed,
 and there's no way to tell Node to re-load it's inventory. 
 
 That child process attempts to do the same thing, and if **IT** finds a missing dependency, it also installs it.
 However, instead of spinning up another subprocess, it detects that it's a child and terminates itself with a status
-code that the parent detects. The parent, in turn, spins up a new child process and continues to do so until a child
-runs without a missing dependency.
+code that the parent detects. The parent, in turn, spins up a new child process. This continues until a child runs
+without a missing dependency.
 
 ## Legacy Scripts
 
-
 ### Shell-driven dependency installation
 
-### Why it's bad
+### Why I stopped using it
 
 `npm -g list` is SLOOOOWWWW, and there's a big chunk of shell script at the top of your JavaScript
 
