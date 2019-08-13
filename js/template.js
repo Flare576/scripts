@@ -1,22 +1,17 @@
 #!/bin/sh
-':' /*; # Put any node dependencies here (and see Readme)
-d=(
-  inquirer
-  yargs
-); c=$(npm -g list 2> /dev/null | grep '^├' | cut -d ' ' -f2)
-for i in ${d[@]}; do if ! [[ $c =~ "$i@" ]]; then echo "Installing $i"; npm install -g $i; fi; done; ':' */
-':' //;NODE_PATH=$(npm -g root) exec node "$0" "$@"
-const {execSync, exec} = require('child_process');
-const argv = require('yargs').argv;
+":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
+  const usage = `Put a useful comment here`;
+const argv = require('yargs')
+  .usage(usage)
+  .alias('help', 'h')
+  .option( 'argument', { alias: 'a', type: 'boolean', description: 'what arg is used for' })
+.argv;
 const inquirer = require('inquirer');
+const {execSync, spawn} = require('child_process');
 
-// "Main" processing
 (async () => {
-    // argv.<variable> will have named arguments passed in
-    // argv._ will be an array of unnamed arguments passed in
-    if (argv.h) {
-        console.log('give the user a little help');
-        return 0;
-    }
+  // Do what you do
 })();
+
+// vim: ft=javascript
 
