@@ -31,10 +31,10 @@ const inquirer = require('inquirer');
 function clearPods (context, namespace) {
     cmdToList(`kubectl get pods -n ${namespace} --context ${context}`)
         .forEach((podName) => {
-            exec(`kubectl delete pods -n ${namespace} --context ${context} ${podName}`, (err, data) => {
-                if (err)
-                    console.log(err);
-                else console.log(data);
+            const cmd = `kubectl delete pods -n ${namespace} --context ${context} ${podName}`;
+            console.log(`Executing ${cmd}`);
+            execSync(cmd, (err, data) => {
+                console.log(`Complete: ${podName}\nResult: ${data}\nError: ${err}`);
             })
         })
 }

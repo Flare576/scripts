@@ -25,7 +25,7 @@ const {execSync, spawn} = require('child_process');
   }
   const message = argv.message || argv._[0];
   if (message) {
-    execSync(`git commit -m  ${message}`, { encoding: 'utf8' });
+    execSync(`git commit -m "${message}"`, { encoding: 'utf8' });
   } else {
     let childArgs = ['commit', '--verbose'];
     if (argv.amend) {
