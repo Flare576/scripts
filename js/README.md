@@ -47,71 +47,18 @@ However, instead of spinning up another subprocess, it detects that it's a child
 code that the parent detects. The parent, in turn, spins up a new child process. This continues until a child runs
 without a missing dependency.
 
-## Legacy Scripts
-
-### Shell-driven dependency installation
-
-### Why I stopped using it
-
-`npm -g list` is SLOOOOWWWW, and there's a big chunk of shell script at the top of your JavaScript
-
-### How it works
-
-I've "minifed" the script in `./template.js` a bit, so here it is expanded and explained.
+## How to use
+You run these like any other scripts, so either of these (or others!) will work:
 
 ```
-#!/bin/sh
+sh /hwerever/you/clone/scripts/js/test.js
+/wherever/you/cloned/scripts/js/test.js
 ```
 
-Fun enough, bash is actually the thing that starts executing this script.
+Will work, or if you start using them a lot, add 
 
 ```
-':' /*; 
+export PATH="/wherever/you/cloned/scripts/js:${PATH}
 ```
 
-':' is a [bash no-op](https://stackoverflow.com/questions/12404661/what-is-the-use-case-of-noop-in-bash) and is used
- here to make bash ignore the next piece of input. Node basically does the same; a string by itself on a line is valid,
- albeit useless. The `/*` starts a Javascript comment, and so the semi colon is ignored, and bash treats the `/*` as the
-input to the no-op, then sees the semi-colon as the command terminator.
-
-```
-# Put any node dependencies here
-dependencies=(
-  inquirer
-  yargs
-)
-```
-
-To avoid cluttering your scripts folder, these will be installed globally and then included via NODE_PATH for this 
-sub-shell. If you're not going to use [inquirer](https://www.npmjs.com/package/inquirer) or
- [yargs](https://www.npmjs.com/package/yargs), feel free to remove them, but they're pretty awesome.
-
-```
-current=$(npm -g --depth 0 list 2> /dev/null | cut -d ' ' -f2)
-```
-
-Get a list of installed packages, trimmed to just top-level and package names
-
-```
-for dep in ${dependencies[@]}; do 
-  if ! [[ $current =~ "$dep@" ]]; then
-      echo "Installing $dep"; npm install -g $dep
-  fi 
-done
-```
-
-For each dependency, check to see if it's listed, and if not, install it
-
-```
-':' */
-```
-
-Our old friend no-op and the closing comment for Node
-
-```
-':' //;NODE_PATH=$(npm -g root) exec node "$0" "$@"
-```
-
-No-op, followed by comment so Node doesn't see the command. Command sets NODE_PATH so Node can see our global modules,
-Exec lets us use the current sub-shell and then call node with arguments
-
+to your .zshrc, .zshenv, .bashrc, .profile, ........ you get it.

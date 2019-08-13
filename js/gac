@@ -10,6 +10,11 @@ const argv = require('yargs')
   .option( 'message', { alias: 'm', type: 'string', description: 'Message to pass to commit. Omit for -v' })
   .option( 'noadd', { alias: 'n', type: 'boolean', description: 'Skip Adding files' })
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
+  .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
+  .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
+  .example( 'gac -f myFile', 'Adds `myFile` to stage, then opens verbose commit' )
+  .example( 'gac -np', 'Only pushes to origin' )
+  .example( 'gac -na', 'Opens last commit as ammend in verbose mode' )
 .argv;
 const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
