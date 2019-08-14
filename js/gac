@@ -29,19 +29,18 @@ const {execSync, spawn} = require('child_process');
     execSync(`git add ${files}`, { encoding: 'utf8' });
   }
   const message = argv.message || argv._[0];
-  if (message) {
-    execSync(`git commit -m "${message}"`, { encoding: 'utf8' });
-  } else {
-    let childArgs = ['commit', '--verbose'];
-    if (argv.amend) {
-      childArgs.push('--amend');
-    }
-    spawn('git', childArgs, {stdio: 'inherit'})
-      .on('close', (code) => {
-        if (code === 0 && argv.push) {
-          execSync('git push');
-        }
-      });
+  let childArgs = ['commit', '--verbose'];
+  if (argv.amend) {
+    childArgs.push('--amend');
   }
+  if (message) {
+    childArgs.push(`-m "${message}`);
+  }
+  spawn('git', childArgs, {stdio: 'inherit'})
+    .on('close', (code) => {
+      if (code === 0 && argv.push) {
+        execSync('git push');
+      }
+    });
 })();
 // vim: ft=javascript
