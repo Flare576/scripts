@@ -1,26 +1,28 @@
 #!/bin/sh
 ":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
+const usage = `Runs 'kubectl delete' on every pod in a namespace in a context. If namespace isn't provided, a prompt \
+will appear.`;
+const contextError = 'Must provide context: trust, but verify.';
+const argv = require('yargs')
+  .usage(usage)
+  .alias('help', 'h')
+  .option('context', { alias: 'c', type: 'string', description: 'k8s context', demandOption: contextError,
+    requiresArg: true, coerce: arg => {
+      if(!arg) {
+        throw new Error(contextError);
+      }
+      return arg;
+    }
+  })
+.option('namespace', { alias: 'n', type: 'string', description: 'k8s namespace' })
+.argv;
 const {execSync, exec} = require('child_process');
-const argv = require('yargs').argv;
 const inquirer = require('inquirer');
 
 (async () => {
-    if (argv.h) {
-        console.log('You must provide a --context. You may provide a --namespace, or let this script help you choose.');
-        return 0;
-    }
+    let { namespace, context } = argv;
 
-    let namespace;
-    let context = argv.context;
-
-    if (!context) {
-        console.log('Must provide context; trust, but verify.');
-        return 1;
-    }
-
-    if (argv._.length === 1) {
-        namespace = argv._[0];
-    } else {
+    if (!namespace) {
         const allNS = cmdToList(`kubectl get namespaces --context ${context}`)
         const answers = await inquirer.prompt([{ type: 'list', name: 'namespace', message: 'Which namespace to clear?', choices: allNS }])
         namespace = answers.namespace;
@@ -46,4 +48,4 @@ function cmdToList (cmd) {
             .slice(1) // Remove header row
             .map(ns => ns.split(/\s+/)[0]);
 }
-
+// vim: ft=javascript
