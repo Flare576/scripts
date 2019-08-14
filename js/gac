@@ -36,11 +36,12 @@ const {execSync, spawn} = require('child_process');
     if (argv.amend) {
       childArgs.push('--amend');
     }
-    spawn('git', childArgs, {stdio: 'inherit'});
+    spawn('git', childArgs, {stdio: 'inherit'})
+      .on('close', (code) => {
+        if (code === 0 && argv.push) {
+          execSync('git push');
+        }
+      });
   }
-
-  if (argv.push) {
-    execSync(`git push`);
-  } 
 })();
 // vim: ft=javascript
