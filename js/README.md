@@ -9,7 +9,7 @@ I'm not the first to want this. My ideas were inspired by this post
 https://unix.stackexchange.com/questions/65235/universal-node-js-shebang
 
 ## Dependencies
-On thing that the NodeJS ecosystem depends on is external modules, but if you don't have these modules already, you
+One thing that the NodeJS ecosystem depends on is external modules, but if you don't have these modules already, you
 need to get them. The approach in this repo solves this automatically without the author needing to be aware of what
 exists and what does not.
 
