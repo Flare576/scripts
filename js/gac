@@ -34,7 +34,7 @@ const {execSync, spawn} = require('child_process');
     childArgs.push('--amend');
   }
   if (message) {
-    childArgs.push(`-m "${message}`);
+    childArgs.push(`-m ${message}`);
   }
   spawn('git', childArgs, {stdio: 'inherit'})
     .on('close', (code) => {
