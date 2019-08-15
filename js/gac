@@ -1,6 +1,6 @@
 #!/bin/sh
 ":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
-  const usage = `Adds specified files (or all if none specified) to git staging and commits (if -m used) or starts a \
+const usage = `Adds specified files (or all if none specified) to git staging and commits (if -m used) or starts a \
 verbose commit.`;
 const argv = require('yargs')
   .usage(usage)
@@ -15,7 +15,7 @@ const argv = require('yargs')
   .example( 'gac -f myFile', 'Adds `myFile` to stage, then opens verbose commit' )
   .example( 'gac -np', 'Only pushes to origin' )
   .example( 'gac -na', 'Opens last commit as ammend in verbose mode' )
-.argv;
+  .argv;
 const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
 
@@ -36,11 +36,21 @@ const {execSync, spawn} = require('child_process');
   if (message) {
     childArgs.push(`-m ${message}`);
   }
-  spawn('git', childArgs, {stdio: 'inherit'})
-    .on('close', (code) => {
-      if (code === 0 && argv.push) {
-        execSync('git push');
-      }
-    });
+
+  let errors = '';
+  const git = spawn('git', childArgs, {stdio: [ 'inherit', 'inherit', 'pipe' ]});
+  git.stderr.on('data', (data) => {
+    errors+=data;
+    console.log(data.toString('utf8'));
+  });
+  git.on('close', (code) => {
+    if ( argv.push && (
+      code === 0
+      || errors === ''
+      || errors.includes('No changes detected')
+    )){
+      execSync('git push');
+    }
+  });
 })();
 // vim: ft=javascript
