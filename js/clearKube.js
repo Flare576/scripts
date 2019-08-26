@@ -38,7 +38,7 @@ const inquirer = require('inquirer');
 function clearPods (context, namespace) {
   cmdToList(`kubectl get pods -n ${namespace} --context ${context}`)
     .forEach((podName) => {
-      const cmd = `kubectl delete pods -n ${namespace} --context ${context} ${podName}`;
+      const cmd = `kubectl delete pods --force --grace-period=0 -n ${namespace} --context ${context} ${podName}`;
       console.log(`Executing ${cmd}`);
       execSync(cmd, (err, data) => {
         console.log(`Complete: ${podName}\nResult: ${data}\nError: ${err}`);
