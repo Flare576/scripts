@@ -8,7 +8,8 @@ const argv = require('yargs')
   .option( 'amend', { alias: 'a', type: 'boolean', description: 'Flag to ammend previous commit' })
   .option( 'file', { alias: 'f', type: 'array', description: 'List of files to add, defaults to `.`' })
   .option( 'message', { alias: 'm', type: 'string', description: 'Message to pass to commit. Omit for -v' })
-  .option( 'noadd', { alias: 'n', type: 'boolean', description: 'Skip Adding files' })
+  .option( 'no-verify', {alias: 'n', type: 'boolean', description: 'Passed through to git commit' })
+  .option( 'skip', { alias: 's', type: 'boolean', description: 'Skip Adding files' })
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
@@ -35,6 +36,9 @@ const {execSync, spawn} = require('child_process');
   }
   if (message) {
     childArgs.push(`-m ${message}`);
+  }
+  if (argv.noVerify) {
+    childArgs.push('-n');
   }
 
   let errors = '';
