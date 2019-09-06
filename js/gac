@@ -14,8 +14,9 @@ const argv = require('yargs')
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
   .example( 'gac -f myFile', 'Adds `myFile` to stage, then opens verbose commit' )
-  .example( 'gac -np', 'Only pushes to origin' )
-  .example( 'gac -na', 'Opens last commit as ammend in verbose mode' )
+  .example( 'gac -nf myFile', 'Adds `myFile` to stage, skips verification, then opens verbose commit' )
+  .example( 'gac -sp', 'Only pushes to origin' )
+  .example( 'gac -sa', 'Opens last commit as ammend in verbose mode' )
   .argv;
 const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
