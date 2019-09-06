@@ -1,0 +1,124 @@
+#!/bin/zsh
+# 30/08/2018 update - will only switch to a branch if
+# provided as first argument; will warn if changes
+# 10/06/2019 update - branch is now -b
+# 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
+usage="$(basename "$0") [-nberRwW] Attempts to run the project in pwd. If branch provided, tries to switch to it first.
+Uses NVM to install NPM, then either uses the commands in .vroom or determines if yarn or npm should be used to start,
+then start server logging to server.log in folder where run unless -n specified
+  -n Log to standard output instead of server.log
+  -b Provide branch to switch to; will prompt if there are changes
+  -e Re-evaluate the 'run' command
+  -r Run 'reset' command before start command (defaults to npm run nuke)
+  -R Sets the reset command
+  -w Run 'watch' command after start command (defaults to npm run watch)
+  -W Sets the watch command"
+
+logMessage="\033[0;31mrun 'less +F server.log' to see the log.\033[0m"
+while getopts ':hwW:rR:eknb:' option; do
+  case "$option" in
+    h) echo "$usage"
+       exit
+       ;;
+    n) nolog="true"
+      ;;
+    e) refind="true"
+      ;;
+    b) branch=$OPTARG
+      ;;
+    r) reset="true"
+      ;;
+    R) newResetCmd=$OPTARG
+      ;;
+    w) watch="true"
+      ;;
+    W) newWatchCmd=$OPTARG
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+# Get configured commands, if any
+config="$(pwd)/.vroom"
+if [ -f "$config" ] ; then
+  while read -r line; do declare "$line"; done < "$config"
+fi
+
+# If we got new commands, set them
+if [ -n "$newResetCmd" ] ; then
+  resetCmd="$newResetCmd"
+elif [ -z "$resetCmd" ] ; then
+  resetCmd="npm run nuke"
+fi
+
+if [ -n "$newWatchCmd" ] ; then
+  watchCmd="$newWatchCmd"
+elif [ -z "$watchCmd" ] ; then
+  watchCmd="npm run watch"
+fi
+
+#Setup NVM
+export NVM_DIR="$HOME/.nvm"
+. "/usr/local/opt/nvm/nvm.sh"
+
+changes=$(git diff --name-only)
+if [ -n "$branch" ] ; then
+  if [ -n "$changes" ] ; then
+    read "nuke?You have local changes; Nuke 'em? (y): "
+  fi
+  if [ -z "$nuke" ] || [ "$nuke" = "y" ] || [ "$nuke" = "yes" ] ; then
+    git reset --hard
+    git checkout $branch
+    git pull
+  else
+    echo "Local changes untouched"
+    exit 1
+  fi
+else
+  if [ -z "$changes" ] ; then
+    git pull
+  fi
+fi
+
+nvm install
+
+files=$(ls)
+if [[ "$files" == *"yarn"* ]] ; then
+  echo "Installing with Yarn"
+  yarn install
+  runCmdNew="yarn run"
+else
+  echo "Installing with NPM"
+  npm ci > /dev/null 2>&1 || npm install
+  runCmdNew="npm run"
+fi
+
+if [ -z "$runCmd" ] || [ -n "$refind" ] ; then
+  scripts=$(eval "$runCmdNew")
+  if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
+    runCmd="$runCmdNew start:local"
+  elif [[ "$scripts" =~ '[[:space:]]+dev[[:space:]]+' ]] ; then
+    runCmd="$runCmdNew dev"
+  else
+    runCmd="$runCmdNew start"
+  fi
+fi
+
+ # Write out the config
+ echo "resetCmd=$resetCmd" > $config
+ echo "watchCmd=$watchCmd" >> $config
+ echo "runCmd=$runCmd" >> $config
+
+ if [ -n "$reset" ] ; then
+   eval "$resetCmd"
+ fi
+ if [ -n "$nolog" ] ; then
+   eval "$runCmd"
+ else
+   echo "$logMessage"
+   eval "$runCmd" > server.log 2>&1
+ fi
+ if [ -n "$watch" ] ; then
+   eval "$watchCmd"
+ fi
+
