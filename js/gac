@@ -22,7 +22,7 @@ const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
 
 (async () => {
-  if (!argv.noadd) {
+  if (!argv.skip) {
     let files = '.';
     if (argv.file) {
       files = argv.file.reduce((list, file) => list += ` ${file}`);
