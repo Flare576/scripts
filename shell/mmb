@@ -1,0 +1,23 @@
+#!/bin/sh
+usage="$(basename "$0") Resets working branch, switches to either master or provided branch, pulls, switches back and \
+starts merge."
+
+while getopts ':h' option; do
+  case "$option" in
+    h) echo "$usage"
+       exit
+       ;;
+  esac
+done
+
+current=$(git branch | grep \* | cut -d ' ' -f2)
+BRANCH=master
+if [ -n "$1" ] ; then
+  BRANCH="$1"
+fi
+git reset --hard
+git checkout "$BRANCH"
+git pull
+git checkout $current
+git merge "$BRANCH"
+git mergetool

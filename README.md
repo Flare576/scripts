@@ -21,8 +21,11 @@ simplifies my git interactions. My most common usages are `gac -a`, `gac -f my.j
 just plain `gac`.
 
 ## gmb (/shell)
-Git Master Branch (gmb) is a really simple script that basically amounts to a forceful `git checkout $branch;git pull`,
+G[ei]t Master Branch (gmb) is a really simple script that basically amounts to a forceful `git checkout $branch;git pull`,
 for when I just want to start over :)
+
+## mmb (/shell)
+Merge Master Branch (mmb) is a really script that basically updates my current branch with changes in "master".
 
 ## killZoom.sh (/shell)
 There was a time when Zoom Meeting was installing a webserver on users' machines without them knowing; this script

@@ -1,0 +1,16 @@
+#compdef mmb
+
+_mmb() {
+  local state
+
+  _arguments \
+    '1: :->branch'
+
+  case $state in
+    (branch)
+      branches=$(git branch | sed 's/[\* ]//g' | paste -s -d" " -)
+      compadd "$@" $(echo $branches) ;;
+  esac
+}
+
+_mmb "$@"
