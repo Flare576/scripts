@@ -30,13 +30,12 @@ const {execSync, spawn} = require('child_process');
 
     execSync(`git add ${files}`, { encoding: 'utf8' });
   }
-  const message = argv.message || argv._[0];
   let childArgs = ['commit', '--verbose'];
   if (argv.amend) {
     childArgs.push('--amend');
   }
-  if (message) {
-    childArgs.push(`-m ${message}`);
+  if (argv.message) {
+    childArgs.push(`-m ${argv.message}`);
   }
   if (argv.noVerify) {
     childArgs.push('-n');
