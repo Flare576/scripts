@@ -23,7 +23,7 @@ const HOME = require('os').homedir();
       const cookie = keyval.split('=');
       return {
         Name: cookie[0],
-        Value: cookie[1],
+        Value: cookie[1].replace(/"/g,''),
         Domain:process.env.JIRA_S_ENDPOINT,
         Expires: tomorrow.toISOString(),
         HostOnly: true,
