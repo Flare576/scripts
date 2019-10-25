@@ -7,6 +7,7 @@ const argv = require('yargs')
   .alias('help', 'h')
   .option( 'amend', { alias: 'a', type: 'boolean', description: 'Flag to ammend previous commit' })
   .option( 'file', { alias: 'f', type: 'array', description: 'List of files to add, defaults to `.`' })
+  .option( 'fileSkip', { alias: 'F', type: 'array', description: 'List of files to IGNORE' })
   .option( 'message', { alias: 'm', type: 'string', description: 'Message to pass to commit. Omit for -v' })
   .option( 'no-verify', {alias: 'n', type: 'boolean', description: 'Passed through to git commit' })
   .option( 'skip', { alias: 's', type: 'boolean', description: 'Skip Adding files' })
@@ -25,10 +26,13 @@ const {execSync, spawn} = require('child_process');
   if (!argv.skip) {
     let files = '.';
     if (argv.file) {
-      files = argv.file.reduce((list, file) => list += ` ${file}`);
+      files = argv.file.join(' ');
     }
 
     execSync(`git add ${files}`, { encoding: 'utf8' });
+    if (argv.fileSkip) {
+      execSync(`git reset ${argv.fileSkip.join(' ')}`, { encoding: 'utf8' });
+    }
   }
   let childArgs = ['commit', '--verbose'];
   if (argv.amend) {
