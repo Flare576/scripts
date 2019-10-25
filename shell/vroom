@@ -6,33 +6,38 @@
 usage="$(basename "$0") [-nberRwW] Attempts to run the project in pwd. If branch provided, tries to switch to it first.
 Uses NVM to install NPM, then either uses the commands in .vroom or determines if yarn or npm should be used to start,
 then start server logging to server.log in folder where run unless -n specified
-  -n Log to standard output instead of server.log
+  -l Log to server.log
   -b Provide branch to switch to; will prompt if there are changes
   -e Re-evaluate the 'run' command
+  -E Sets the run command
   -r Run 'reset' command before start command (defaults to npm run nuke)
   -R Sets the reset command
   -w Run 'watch' command after start command (defaults to npm run watch)
   -W Sets the watch command"
 
-logMessage="\033[0;31mrun 'less +F server.log' to see the log.\033[0m"
-while getopts ':hwW:rR:eknb:' option; do
+while getopts ':hwW:rR:eE:knl:b:' option; do
   case "$option" in
     h) echo "$usage"
        exit
        ;;
-    n) nolog="true"
+    n) echo "logging to std out is now the default. If you want to log to a file, use -l"
+      ;;
+    l) logFile="$OPTARG"
+       logToFile="true"
       ;;
     e) refind="true"
+      ;;
+    E) newRunCmd="$OPTARG"
       ;;
     b) branch=$OPTARG
       ;;
     r) reset="true"
       ;;
-    R) newResetCmd=$OPTARG
+    R) newResetCmd="$OPTARG"
       ;;
     w) watch="true"
       ;;
-    W) newWatchCmd=$OPTARG
+    W) newWatchCmd="$OPTARG"
       ;;
   esac
 done
@@ -55,6 +60,10 @@ if [ -n "$newWatchCmd" ] ; then
   watchCmd="$newWatchCmd"
 elif [ -z "$watchCmd" ] ; then
   watchCmd="npm run watch"
+fi
+
+if [ -n "$newRunCmd" ] ; then
+  runCmd="$newRunCmd"
 fi
 
 #Setup NVM
@@ -110,13 +119,17 @@ fi
  echo "runCmd=$runCmd" >> $config
 
  if [ -n "$reset" ] ; then
+   echo "trying to reset"
    eval "$resetCmd"
  fi
- if [ -n "$nolog" ] ; then
+ if [ -z "$logToFile" ] ; then
    eval "$runCmd"
  else
-   echo "$logMessage"
-   eval "$runCmd" > server.log 2>&1
+   if [ -z "$logFile" ] ; then
+     logFile="server.log"
+   fi
+   echo "\033[0;31mrun 'less +F $logFile' to see the log.\033[0m"
+   eval "$runCmd" > "$logFile" 2>&1
  fi
  if [ -n "$watch" ] ; then
    eval "$watchCmd"

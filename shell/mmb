@@ -21,3 +21,7 @@ git pull
 git checkout $current
 git merge "$BRANCH"
 git mergetool
+read -p "Want to clear out the orig files (if you merged)" response
+if [[ "$response" = "y"* ]] ; then
+  find . -type f -name "*.orig" -delete
+fi
