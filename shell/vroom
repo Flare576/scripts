@@ -3,10 +3,15 @@
 # provided as first argument; will warn if changes
 # 10/06/2019 update - branch is now -b
 # 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
-usage="$(basename "$0") [-nberRwW] Attempts to run the project in pwd. If branch provided, tries to switch to it first.
-Uses NVM to install NPM, then either uses the commands in .vroom or determines if yarn or npm should be used to start,
-then start server logging to server.log in folder where run unless -n specified
+usage="$(basename "$0") [-holeEbrRwW] Attempts to run the project in pwd.
+If branch provided, tries to switch to it first then pulls latest. Then determines commands to use by using provided
+commands, .vroom file, or defaults (in that order). If defaulting the 'run' command it searches for, in priority order:
+[start:local], [dev], [start].
+Uses NVM to install NPM, pyenv to install python, then if -l is specified begins logging to -o file (or 'server.log')
+If 'yarn.lock' is discovered in project, installs with yarn, otherwise installs with npm, resets if -r is provided, 
+  executes 'run' command, then executes 'watch' command if -w is proivded.
   -l Log to server.log
+  -o Change output file (defaults to server.log)
   -b Provide branch to switch to; will prompt if there are changes
   -e Re-evaluate the 'run' command
   -E Sets the run command
@@ -15,15 +20,16 @@ then start server logging to server.log in folder where run unless -n specified
   -w Run 'watch' command after start command (defaults to npm run watch)
   -W Sets the watch command"
 
-while getopts ':hwW:rR:eE:knl:b:' option; do
+while getopts ':hwW:rR:eE:knlo:b:' option; do
   case "$option" in
     h) echo "$usage"
        exit
        ;;
     n) echo "logging to std out is now the default. If you want to log to a file, use -l"
       ;;
-    l) logFile="$OPTARG"
-       logToFile="true"
+    o) logFile="$OPTARG"
+      ;;
+    l) logToFile="true"
       ;;
     e) refind="true"
       ;;
@@ -42,6 +48,33 @@ while getopts ':hwW:rR:eE:knl:b:' option; do
   esac
 done
 shift $((OPTIND -1))
+
+# Handle branch switching/pulling
+changes=$(git diff --name-only)
+if [ -n "$branch" ] ; then
+  if [ -n "$changes" ] ; then
+    read "destroy?You have local changes; Really switch branches? 'em? (y): "
+  fi
+  if [ -z "$destroy" ] || [ "$destroy" = "y" ] || [ "$destroy" = "yes" ] ; then
+    git reset --hard
+    git checkout $branch
+    git pull
+  else
+    echo "Local changes untouched"
+    exit 1
+  fi
+else
+  if [ -z "$changes" ] ; then
+    git pull
+  fi
+fi
+
+# Setup "Dependencies" (NVM and Python)
+export NVM_DIR="$HOME/.nvm"
+. "/usr/local/opt/nvm/nvm.sh"
+nvm install
+echo "If you don't use pyenv and your run script needs python, you might need to do some trickery; goatspeed"
+pyenv init -
 
 # Get configured commands, if any
 config="$(pwd)/.vroom"
@@ -62,47 +95,21 @@ elif [ -z "$watchCmd" ] ; then
   watchCmd="npm run watch"
 fi
 
-if [ -n "$newRunCmd" ] ; then
-  runCmd="$newRunCmd"
-fi
-
-#Setup NVM
-export NVM_DIR="$HOME/.nvm"
-. "/usr/local/opt/nvm/nvm.sh"
-
-changes=$(git diff --name-only)
-if [ -n "$branch" ] ; then
-  if [ -n "$changes" ] ; then
-    read "nuke?You have local changes; Nuke 'em? (y): "
-  fi
-  if [ -z "$nuke" ] || [ "$nuke" = "y" ] || [ "$nuke" = "yes" ] ; then
-    git reset --hard
-    git checkout $branch
-    git pull
-  else
-    echo "Local changes untouched"
-    exit 1
-  fi
-else
-  if [ -z "$changes" ] ; then
-    git pull
-  fi
-fi
-
-nvm install
-
+# Determine setup command
 files=$(ls)
 if [[ "$files" == *"yarn"* ]] ; then
-  echo "Installing with Yarn"
-  yarn install
-  runCmdNew="yarn run"
+  setupCmd="echo 'Installing with Yarn';yarn install"
+  runCmdNewBase="yarn run"
 else
-  echo "Installing with NPM"
-  npm ci > /dev/null 2>&1 || npm install
-  runCmdNew="npm run"
+  setupCmd="echo 'Installing with NPM';npm ci > /dev/null 2>&1 || npm install"
+  runCmdNewBase="npm run"
 fi
 
-if [ -z "$runCmd" ] || [ -n "$refind" ] ; then
+if [ -n "$newRunCmd" ] ; then
+  runCmd="$newRunCmd"
+elif [ -z "$runCmd" ] || [ -n "$refind" ] ; then
+  runCmdNew=runCmdNewBase
+  # Defaults for run command aren't as easy
   scripts=$(eval "$runCmdNew")
   if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
     runCmd="$runCmdNew start:local"
@@ -113,25 +120,34 @@ if [ -z "$runCmd" ] || [ -n "$refind" ] ; then
   fi
 fi
 
- # Write out the config
- echo "resetCmd=$resetCmd" > $config
- echo "watchCmd=$watchCmd" >> $config
- echo "runCmd=$runCmd" >> $config
+# Write out the config
+echo "resetCmd=$resetCmd" > $config
+echo "watchCmd=$watchCmd" >> $config
+echo "runCmd=$runCmd" >> $config
 
- if [ -n "$reset" ] ; then
-   echo "trying to reset"
-   eval "$resetCmd"
- fi
- if [ -z "$logToFile" ] ; then
-   eval "$runCmd"
- else
-   if [ -z "$logFile" ] ; then
-     logFile="server.log"
-   fi
-   echo "\033[0;31mrun 'less +F $logFile' to see the log.\033[0m"
-   eval "$runCmd" > "$logFile" 2>&1
- fi
- if [ -n "$watch" ] ; then
-   eval "$watchCmd"
- fi
+if [ -n "$logToFile" ] ; then
+  if [ -z "$logFile" ] ; then
+    logFile="server.log"
+  fi
+  echo "\033[0;31mrun 'less +F $logFile' to see the logs.\033[0m"
+  setupCmd=$(echo "$setupCmd" | sed -e 's%/dev/null%'$logFile'%')
+  setupCmd="$setupCmd >> \"$logFile\" 2>&1"
+  resetCmd="$resetCmd >> \"$logFile\" 2>&1"
+  runCmd="$runCmd >> \"$logFile\" 2>&1"
+  watchCmd="$watchCmd >> \"$logFile\" 2>&1"
+fi
+
+#DO WORK SON
+echo "setting up [$setupCmd]"
+eval "$setupCmd"
+if [ -n "$reset" ] ; then
+  echo "trying to reset [$resetCmd]"
+  eval "$resetCmd"
+fi
+echo "Running [$runCmd]"
+eval "$runCmd"
+if [ -n "$watch" ] ; then
+  echo "Watching [$watchCmd]"
+  eval "$watchCmd"
+fi
 
