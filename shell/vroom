@@ -73,8 +73,7 @@ fi
 export NVM_DIR="$HOME/.nvm"
 . "/usr/local/opt/nvm/nvm.sh"
 nvm install
-echo "If you don't use pyenv and your run script needs python, you might need to do some trickery; goatspeed"
-pyenv init -
+# export PATH="/usr/bin/python/:${PATH}"
 
 # Get configured commands, if any
 config="$(pwd)/.vroom"
@@ -108,7 +107,7 @@ fi
 if [ -n "$newRunCmd" ] ; then
   runCmd="$newRunCmd"
 elif [ -z "$runCmd" ] || [ -n "$refind" ] ; then
-  runCmdNew=runCmdNewBase
+  runCmdNew="$runCmdNewBase"
   # Defaults for run command aren't as easy
   scripts=$(eval "$runCmdNew")
   if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
