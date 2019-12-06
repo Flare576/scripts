@@ -1,5 +1,5 @@
 #!/bin/sh
-":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
+":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js -- "$0" "$@"
 const usage = `Takes the cookies from a working xhr call in browser and sets up hosted Jira instances.
 BE SURE TO WRAP THE COOKIE IN QUOTES!`;
 const argv = require('yargs')

@@ -1,5 +1,5 @@
 #!/bin/sh
-":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
+":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js -- "$0" "$@"
 const usage = `Runs 'kubectl delete' on every pod in a namespace in a context. If namespace isn't provided, a prompt \
 will appear.`;
 const contextError = 'Must provide context: trust, but verify.';

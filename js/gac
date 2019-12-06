@@ -1,5 +1,5 @@
 #!/bin/sh
-":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js "$0" "$@"
+":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js -- "$0" "$@"
 const usage = `Adds specified files (or all if none specified) to git staging and commits (if -m used) or starts a \
 verbose commit.`;
 const argv = require('yargs')
@@ -12,7 +12,7 @@ const argv = require('yargs')
   .option( 'no-verify', {alias: 'n', type: 'boolean', description: 'Passed through to git commit' })
   .option( 'skip', { alias: 's', type: 'boolean', description: 'Skip Adding files' })
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
-  .option( 'jenkins', { alias: 'j', type: 'boolean', description: 'Jenkins requires npm version bump' })
+  .option( 'version', { alias: 'v', type: 'boolean', description: 'Jenkins requires npm version bump' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -j', 'Adds all files/subfolder files, then opens a verbose commit, then perfoms npm version bump' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
@@ -54,8 +54,8 @@ const {execSync, spawn} = require('child_process');
     console.log(data.toString('utf8'));
   });
   git.on('close', (code) => {
-    if ( argv.jenkins ) {
-      execSync(`npm version patch -m "Don't Break the Pipe" --commit-hooks=false`);
+    if ( argv.version ) {
+      execSync(`npm version patch -m "Don't Break the Pipe" --commit-hooks=false --git-tag-version=false`);
     }
     if ( argv.push && (
       code === 0
