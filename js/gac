@@ -12,7 +12,6 @@ const argv = require('yargs')
   .option( 'no-verify', {alias: 'n', type: 'boolean', description: 'Passed through to git commit' })
   .option( 'skip', { alias: 's', type: 'boolean', description: 'Skip Adding files' })
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
-  .option( 'version', { alias: 'v', type: 'boolean', description: 'Jenkins requires npm version bump' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -j', 'Adds all files/subfolder files, then opens a verbose commit, then perfoms npm version bump' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
@@ -20,12 +19,20 @@ const argv = require('yargs')
   .example( 'gac -nf myFile', 'Adds `myFile` to stage, skips verification, then opens verbose commit' )
   .example( 'gac -sp', 'Only pushes to origin' )
   .example( 'gac -sa', 'Opens last commit as ammend in verbose mode' )
+  .example( 'gac -a -f myFile', 'Removes all files from last commit, adds only myFile, opens new commit with prior ' +
+    'message in amend mode' )
   .argv;
 const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
 
 (async () => {
+  const customFileAmendFlag = argv.amend && (argv.file || argv.fileSkip);
   if (!argv.skip) {
+    // if an Amend commit is being done with a file listing, need to be sure we're getting the new listing
+    if (customFileAmendFlag) {
+      execSync(`git reset --soft HEAD^`, { encoding: 'utf8' });
+    }
+
     let files = '.';
     if (argv.file) {
       files = argv.file.join(' ');
@@ -34,6 +41,10 @@ const {execSync, spawn} = require('child_process');
     execSync(`git add ${files}`, { encoding: 'utf8' });
     if (argv.fileSkip) {
       execSync(`git reset ${argv.fileSkip.join(' ')}`, { encoding: 'utf8' });
+    }
+
+    if (customFileAmendFlag) {
+      execSync(`git commit --no-edit -c ORIG_HEAD`, { encoding: 'utf8' });
     }
   }
   let childArgs = ['commit', '--verbose'];
@@ -54,9 +65,6 @@ const {execSync, spawn} = require('child_process');
     console.log(data.toString('utf8'));
   });
   git.on('close', (code) => {
-    if ( argv.version ) {
-      execSync(`npm version patch -m "Don't Break the Pipe" --commit-hooks=false --git-tag-version=false`);
-    }
     if ( argv.push && (
       code === 0
       || errors === ''
