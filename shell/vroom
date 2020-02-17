@@ -97,6 +97,10 @@ fi
 # Determine setup command
 files=$(ls)
 if [[ "$files" == *"yarn"* ]] ; then
+  cmdtest=$(yarn)
+  if [ $? -ne 0 ] ; then
+    npm install -g yarn
+  fi
   setupCmd="echo 'Installing with Yarn';yarn install"
   runCmdNewBase="yarn run"
 else
