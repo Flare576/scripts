@@ -1,12 +1,19 @@
 #!/bin/sh
-usage="$(basename "$0") [-hr] Resets working branch, switches to either master or provided branch, pulls, switches back and \
-starts merge.
-  -r Runs rebase instead of merge"
+usage="$(basename "$0") [-cdhr] [<branch>]'Merge Master Branch' manages merging with master. Optionally, resets \
+  working branch (-d), switches to either master or provided branch, pulls, switches back and starts merge.
+  -c Clean up .orig files and exit
+  -d Reset branch
+  -r Runs rebase instead of merge
+  <branch> Branch to use instead of master"
 
-while getopts ':hr' option; do
+while getopts ':hcdr' option; do
   case "$option" in
     h) echo "$usage"
        exit
+       ;;
+    d) delete="true"
+       ;;
+    c) clean="true"
        ;;
     r) rebase="true"
        ;;
@@ -14,21 +21,32 @@ while getopts ':hr' option; do
 done
 shift $((OPTIND -1))
 
+if [ "$clean" == "true" ] ; then
+  find . -type f -name "*.orig" -exec mv {} /tmp/ \;
+  echo ".orig files moved to /tmp"
+  exit
+fi
+
 current=$(git branch | grep \* | cut -d ' ' -f2)
-BRANCH=master
+BRANCH="master"
 if [ -n "$1" ] ; then
   BRANCH="$1"
 fi
-git reset --hard
-git checkout "$BRANCH"
-git pull
-git checkout $current
+BRANCH="origin/$BRANCH"
+git fetch
+
+if [ "$delete" == "true" ] ; then
+  git reset --hard
+else
+  git stash
+fi
+
 if [ -n "$rebase" ] ; then
-  git rebase "$BRANCH"
+  git rebase -i "$BRANCH"
 else
   git merge "$BRANCH"
 fi
 
-git mergetool
-find . -type f -name "*.orig" -exec mv {} /tmp/ \;
-echo ".orig files moved to /tmp"
+if [ "$delete" != "true" ] ; then
+  git stash pop
+fi

@@ -4,6 +4,9 @@ _mmb() {
   local state
 
   _arguments \
+    '-c[clean just remove .orig]' \
+    '-r[rebase instead of merge]' \
+    '-s[safe: no reset]' \
     '1: :->branch'
 
   case $state in
