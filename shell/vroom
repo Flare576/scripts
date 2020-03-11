@@ -30,12 +30,8 @@ Examples: (assumes a NodeJS yarn project)
   vroom -L 'foo': Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'foo'
   vroom -d: Setup NVM, switch to the right NPM version, do 'yarn install', run the destroyCmd"
 
-echo_log() {
-  if [ -n "$logFile" ]; then
-    echo $1 >> "$logFile" 2>&1
-  else
-    echo $(echo $1 | sed 's/;/;\\n/g')
-  fi
+echo_cmd() {
+  echo $(echo $1 | sed 's/;/;\\n/g')
 }
 
 base_project() {
@@ -44,10 +40,10 @@ base_project() {
 
   # Check for project type
   if [[ "$files" =~ ".nvmrc" ]]; then
-    echo_log "Found .nvmrc file; wiring up NVM"
+    echo_cmd "Found .nvmrc file; wiring up NVM"
     export NVM_DIR="$HOME/.nvm"
     . "/usr/local/opt/nvm/nvm.sh"
-    eval "nvm install $cmdSuffix"
+    eval "nvm install"
     if [[ "$files" =~ "yarn.lock" ]]; then
       manager="yarn"
       setup='install'
@@ -62,8 +58,8 @@ base_project() {
     fi
   fi # Right now just NodeJS
 
-  echo_log "Installing dependencies with $manager $setup"
-  eval "$manager $setup $cmdSuffix"
+  echo_cmd "Installing dependencies with $manager $setup"
+  eval "$manager $setup"
 }
 
 configure_setup() {
@@ -145,15 +141,14 @@ while getopts ':hdlstwD:L:R:S:T:W:' option; do
 done
 shift $((OPTIND -1))
 
-cmdSuffix=''
 if [ -n "$logToFile" ] || [ -n "$logFile" ]; then
   if [ -z "$logFile" ] ; then
     logFile="server.log"
   fi
   echo "\033[0;31mrun 'less +F $logFile' to see the logs.\033[0m"
-  if [ -f "$logFile" ]; then cp "$logFile" "$logFile.bkp"; fi
-  echo 'hello world' > $logFile
-  cmdSuffix=">> \"$logFile\" 2>&1"
+  # holy moly, exec redirects script output!
+  exec > $logFile
+  exec 2>&1
 fi
 # sets changes, files, manager, and setup
 base_project
@@ -185,20 +180,20 @@ echo "watchCmd=$watchCmd" >> $config
 echo "destroyCmd=$destroyCmd" >> $config
 
 if [[ "$doDestroy" == "true" ]]; then
-  echo_log "running destroy [$destroyCmd]"
-  eval "$destroyCmd $cmdSuffix"
+  echo_cmd "running destroy [$destroyCmd]"
+  eval "$destroyCmd"
   exit
 fi
 
 if [[ "$doSetup" == "true" ]]; then
-  echo_log "running setup [$setupCmd]"
-  eval "$setupCmd $cmdSuffix"
+  echo_cmd "running setup [$setupCmd]"
+  eval "$setupCmd"
 fi
 
-echo_log "running Run [$runCmd]"
-eval "$runCmd $cmdSuffix"
+echo_cmd "running Run [$runCmd]"
+eval "$runCmd"
 
 if [[ "$doWatch" == "true" ]]; then
-  echo_log "running watch [$watchCmd]"
-  eval "$watchCmd $cmdSuffix"
+  echo_cmd "running watch [$watchCmd]"
+  eval "$watchCmd"
 fi
