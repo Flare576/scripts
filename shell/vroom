@@ -34,7 +34,7 @@ echo_log() {
   if [ -n "$logFile" ]; then
     echo $1 >> "$logFile" 2>&1
   else
-    echo $1
+    echo $(echo $1 | sed 's/;/;\\n/g')
   fi
 }
 
