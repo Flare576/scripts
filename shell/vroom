@@ -5,21 +5,30 @@
 # 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
 # 03/09/2020 update - annual overhaul
 usage="$(basename "$0") [-lLsStTd] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
-• Base is internally handled and depends on language, package manager, etc.
-• Setup, run, and destroy are defined by local .vroom file.
+• Base depends on language, package manager, etc.
 • Setup would be setting up linking, cleaning dist/node_modules, etc, and is not run by default (-s).
 • Run is the main executor of your project locally. If undefined, $0 will do its best to determine what it should be
-• Watch is for projects whose Run commands exit (containerized) and need an optional secondary command to watch for changes.
+• Watch when RunCmd exits (e.g., containerized), use this to run a long-running 'watch' command (-w).
 • Destroy generally undoes all the things that Setup does.
+*NOTE: Base is internally handled, while setup, run, and destroy are defined by local .vroom file.
   -l log to server.log or provided -Logfile
-  -L Change output file (defaults to server.log)
+  -L Change output file (implies -l)
   -s run Setup command, then Run command
   -S update Setup command (does not imply -s)
   -R update Run command
   -W update Watch comamnd (does not imply -w)
   -w run Watch command after Run command
   -D update Destroy command (does not imply -d)
-  -d Destroy: only run Destroy command"
+  -d Destroy: only run Destroy command
+Examples: (assumes a NodeJS yarn project)
+  vroom: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd
+  vroom -s: Setup NVM, switch to the right NPM version, do 'yarn install', run the setupCmd and run the runCmd
+  vroom -S \"echo 'hello'\":  Setup NVM, switch to the right NPM version, do 'yarn install', set the setupCmd to \
+  vroom -s -S \"echo 'hello'\": Setup NVM, switch to the right NPM version, do 'yarn install', set the setupCmd to \
+    echo 'hello', run setupCmd and run the runCmd
+  vroom -l: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'server.log'
+  vroom -L 'foo': Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'foo'
+  vroom -d: Setup NVM, switch to the right NPM version, do 'yarn install', run the destroyCmd"
 
 echo_log() {
   if [ -n "$logFile" ]; then
