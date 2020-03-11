@@ -3,117 +3,103 @@
 # provided as first argument; will warn if changes
 # 10/06/2019 update - branch is now -b
 # 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
-usage="$(basename "$0") [-holeEbrRwW] Attempts to run the project in pwd.
-If branch provided, tries to switch to it first then pulls latest. Then determines commands to use by using provided
-commands, .vroom file, or defaults (in that order). If defaulting the 'run' command it searches for, in priority order:
-[start:local], [dev], [start].
-Uses NVM to install NPM, pyenv to install python, then if -l is specified begins logging to -o file (or 'server.log')
-If 'yarn.lock' is discovered in project, installs with yarn, otherwise installs with npm, resets if -r is provided, 
-  executes 'run' command, then executes 'watch' command if -w is proivded.
-  -l Log to server.log
-  -o Change output file (defaults to server.log)
-  -b Provide branch to switch to; will prompt if there are changes
-  -e Re-evaluate the 'run' command
-  -E Sets the run command
-  -r Run 'reset' command before start command (defaults to npm run nuke)
-  -R Sets the reset command
-  -w Run 'watch' command after start command (defaults to npm run watch)
-  -W Sets the watch command"
+# 03/09/2020 update - annual overhaul
+usage="$(basename "$0") [-lLsStTd] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
+• Base is internally handled and depends on language, package manager, etc.
+• Setup, run, and destroy are defined by local .vroom file.
+• Setup would be setting up linking, cleaning dist/node_modules, etc, and is not run by default (-s).
+• Run is the main executor of your project locally. If undefined, $0 will do its best to determine what it should be
+• Watch is for projects whose Run commands exit (containerized) and need an optional secondary command to watch for changes.
+• Destroy generally undoes all the things that Setup does.
+  -l log to server.log or provided -Logfile
+  -L Change output file (defaults to server.log)
+  -s run Setup command, then Run command
+  -S update Setup command (does not imply -s)
+  -R update Run command
+  -W update Watch comamnd (does not imply -w)
+  -w run Watch command after Run command
+  -D update Destroy command (does not imply -d)
+  -d Destroy: only run Destroy command"
 
-while getopts ':hwW:rR:eE:knlo:b:' option; do
-  case "$option" in
-    h) echo "$usage"
-       exit
-       ;;
-    n) echo "logging to std out is now the default. If you want to log to a file, use -l"
-      ;;
-    o) logFile="$OPTARG"
-      ;;
-    l) logToFile="true"
-      ;;
-    e) refind="true"
-      ;;
-    E) newRunCmd="$OPTARG"
-      ;;
-    b) branch=$OPTARG
-      ;;
-    r) reset="true"
-      ;;
-    R) newResetCmd="$OPTARG"
-      ;;
-    w) watch="true"
-      ;;
-    W) newWatchCmd="$OPTARG"
-      ;;
-  esac
-done
-shift $((OPTIND -1))
-
-# Handle branch switching/pulling
-changes=$(git diff --name-only)
-if [ -n "$branch" ] ; then
-  if [ -n "$changes" ] ; then
-    read "destroy?You have local changes; Really switch branches? 'em? (y): "
-  fi
-  if [ -z "$destroy" ] || [ "$destroy" = "y" ] || [ "$destroy" = "yes" ] ; then
-    git reset --hard
-    git checkout $branch
-    git pull
+echo_log() {
+  if [ -n "$logFile" ]; then
+    echo $1 >> "$logFile" 2>&1
   else
-    echo "Local changes untouched"
-    exit 1
+    echo $1
   fi
-else
-  if [ -z "$changes" ] ; then
-    git pull
+}
+
+base_project() {
+  changes=$(git diff --name-only)
+  files=$(ls -al)
+
+  # Check for project type
+  if [[ "$files" =~ ".nvmrc" ]]; then
+    echo_log "Found .nvmrc file; wiring up NVM"
+    export NVM_DIR="$HOME/.nvm"
+    . "/usr/local/opt/nvm/nvm.sh"
+    eval "nvm install $cmdSuffix"
+    if [[ "$files" =~ "yarn.lock" ]]; then
+      manager="yarn"
+      setup='install'
+    else
+      manager="npm"
+      available=$(npm)
+      if [[ "$available" =~ " ci," ]]; then
+        setup="ci"
+      else
+        setup="install"
+      fi
+    fi
+  fi # Right now just NodeJS
+
+  echo_log "Installing dependencies with $manager $setup"
+  eval "$manager $setup $cmdSuffix"
+}
+
+configure_setup() {
+  if [ -z "$setupCmd" ] || [ -n "$newSetupCommand" ]; then
+    if [ -n "$newSetupCommand" ]; then
+      setupCmd="$newSetupCommand"
+    else
+      setupCmd="$manager $setup"
+    fi
   fi
-fi
+}
 
-# Setup "Dependencies" (NVM and Python)
-export NVM_DIR="$HOME/.nvm"
-. "/usr/local/opt/nvm/nvm.sh"
-nvm install
-# export PATH="/usr/bin/python/:${PATH}"
-
-# Get configured commands, if any
-config="$(pwd)/.vroom"
-if [ -f "$config" ] ; then
-  while read -r line; do declare "$line"; done < "$config"
-fi
-
-# If we got new commands, set them
-if [ -n "$newResetCmd" ] ; then
-  resetCmd="$newResetCmd"
-elif [ -z "$resetCmd" ] ; then
-  resetCmd="npm run nuke"
-fi
-
-if [ -n "$newWatchCmd" ] ; then
-  watchCmd="$newWatchCmd"
-elif [ -z "$watchCmd" ] ; then
-  watchCmd="npm run watch"
-fi
-
-# Determine setup command
-files=$(ls)
-if [[ "$files" == *"yarn"* ]] ; then
-  cmdtest=$(yarn)
-  if [ $? -ne 0 ] ; then
-    npm install -g yarn
+configure_destroy() {
+  if [ -z "$destroyCmd" ] || [ -n "$newDestroyCommand" ]; then
+    if [ -n "$newDestroyCommand" ]; then
+      destroyCmd="$newDestroyCommand"
+    else
+      destroyCmd="./nuke.sh"
+    fi
   fi
-  setupCmd="echo 'Installing with Yarn';yarn install"
-  runCmdNewBase="yarn run"
-else
-  setupCmd="echo 'Installing with NPM';npm ci > /dev/null 2>&1 || npm install"
-  runCmdNewBase="npm run"
-fi
+}
 
-if [ -n "$newRunCmd" ] ; then
-  runCmd="$newRunCmd"
-elif [ -z "$runCmd" ] || [ -n "$refind" ] ; then
-  runCmdNew="$runCmdNewBase"
-  # Defaults for run command aren't as easy
-  scripts=$(eval "$runCmdNew")
+configure_watch() {
+  if [ -z "$watchCmd" ] || [ -n "$newWatchCommand" ]; then
+    if [ -n "$newWatchCommand" ]; then
+      watchCmd="$newWatchCommand"
+    else
+      watchCmd="echo '🥃'"
+    fi
+  fi
+}
+
+configure_run() {
+  if [ -z "$runCmd" ] || [ -n "$newRunCommand" ]; then
+    if [ -n "$newRunCommand" ]; then
+      runCmd="$newRunCommand"
+    else
+      set_default_run
+    fi
+  fi
+}
+
+set_default_run() {
+  # checks for, in order, `start:local`, `dev`, `start` as default
+  scripts=$(eval "$manager")
   if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
     runCmd="$runCmdNew start:local"
   elif [[ "$scripts" =~ '[[:space:]]+dev[[:space:]]+' ]] ; then
@@ -121,36 +107,89 @@ elif [ -z "$runCmd" ] || [ -n "$refind" ] ; then
   else
     runCmd="$runCmdNew start"
   fi
-fi
+}
 
-# Write out the config
-echo "resetCmd=$resetCmd" > $config
-echo "watchCmd=$watchCmd" >> $config
-echo "runCmd=$runCmd" >> $config
+while getopts ':hdlstwD:L:R:S:T:W:' option; do
+  case "$option" in
+    h) echo "$usage"
+       exit
+       ;;
+    d) doDestroy="true"
+      ;;
+    D) newDestroyCmd="$OPTARG"
+      ;;
+    L) logFile="$OPTARG"
+      ;;
+    l) logToFile="true"
+      ;;
+    r) newRunCmd="$OPTARG"
+      ;;
+    s) doSetup="true"
+      ;;
+    S) newSetupCommand="$OPTARG"
+      ;;
+    w) doWatch="true"
+      ;;
+    T) newWatchCommand="$OPTARG"
+      ;;
+  esac
+done
+shift $((OPTIND -1))
 
-if [ -n "$logToFile" ] ; then
+cmdSuffix=''
+if [ -n "$logToFile" ] || [ -n "$logFile" ]; then
   if [ -z "$logFile" ] ; then
     logFile="server.log"
   fi
   echo "\033[0;31mrun 'less +F $logFile' to see the logs.\033[0m"
-  setupCmd=$(echo "$setupCmd" | sed -e 's%/dev/null%'$logFile'%')
-  setupCmd="$setupCmd >> \"$logFile\" 2>&1"
-  resetCmd="$resetCmd >> \"$logFile\" 2>&1"
-  runCmd="$runCmd >> \"$logFile\" 2>&1"
-  watchCmd="$watchCmd >> \"$logFile\" 2>&1"
+  if [ -f "$logFile" ]; then cp "$logFile" "$logFile.bkp"; fi
+  echo 'hello world' > $logFile
+  cmdSuffix=">> \"$logFile\" 2>&1"
+fi
+# sets changes, files, manager, and setup
+base_project
+
+# Handle updating unchanged branch
+if [ -z "$changes" ] ; then
+  eval "echo 'no local changes, pulling from origin' $cmdSuffix";
+  git pull > /dev/null 2>&1
 fi
 
-#DO WORK SON
-echo "setting up [$setupCmd]"
-eval "$setupCmd"
-if [ -n "$reset" ] ; then
-  echo "trying to reset [$resetCmd]"
-  eval "$resetCmd"
-fi
-echo "Running [$runCmd]"
-eval "$runCmd"
-if [ -n "$watch" ] ; then
-  echo "Watching [$watchCmd]"
-  eval "$watchCmd"
+#old: resetCmd, watchCmd, runCmd
+#new: setupCmd, runCmd, watchCmd, destroyCmd
+config="$(pwd)/.vroom"
+if [ -f "$config" ] ; then
+  while read -r line; do declare "$line"; done < "$config"
 fi
 
+if [ -n "$resetCmd" ]; then setupCmd="$resetCmd"; fi
+
+configure_setup
+configure_run
+configure_watch
+configure_destroy
+
+# Write out the config
+echo "setupCmd=$setupCmd" > $config
+echo "runCmd=$runCmd" >> $config
+echo "watchCmd=$watchCmd" >> $config
+echo "destroyCmd=$destroyCmd" >> $config
+
+if [[ "$doDestroy" == "true" ]]; then
+  echo_log "running destroy [$destroyCmd]"
+  eval "$destroyCmd $cmdSuffix"
+  exit
+fi
+
+if [[ "$doSetup" == "true" ]]; then
+  echo_log "running setup [$setupCmd]"
+  eval "$setupCmd $cmdSuffix"
+fi
+
+echo_log "running Run [$runCmd]"
+eval "$runCmd $cmdSuffix"
+
+if [[ "$doWatch" == "true" ]]; then
+  echo_log "running watch [$watchCmd]"
+  eval "$watchCmd $cmdSuffix"
+fi
