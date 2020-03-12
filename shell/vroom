@@ -4,13 +4,16 @@
 # 10/06/2019 update - branch is now -b
 # 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
 # 03/09/2020 update - annual overhaul
-usage="$(basename "$0") [-lLsStTd] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
+version=9.23.1
+usage="$(basename "$0") [-hdelLsStTv] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
 • Base depends on language, package manager, etc.
 • Setup would be setting up linking, cleaning dist/node_modules, etc, and is not run by default (-s).
 • Run is the main executor of your project locally. If undefined, $0 will do its best to determine what it should be
 • Watch when RunCmd exits (e.g., containerized), use this to run a long-running 'watch' command (-w).
 • Destroy generally undoes all the things that Setup does.
 *NOTE: Base is internally handled, while setup, run, and destroy are defined by local .vroom file.
+  -h show this message
+  -e edit config
   -l log to server.log or provided -Logfile
   -L Change output file (implies -l)
   -s run Setup command, then Run command
@@ -20,6 +23,7 @@ usage="$(basename "$0") [-lLsStTd] Five main parts: base, setup, run, watch, des
   -w run Watch command after Run command
   -D update Destroy command (does not imply -d)
   -d Destroy: only run Destroy command
+  -v Prints version info
 Examples: (assumes a NodeJS yarn project)
   vroom: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd
   vroom -s: Setup NVM, switch to the right NPM version, do 'yarn install', run the setupCmd and run the runCmd
@@ -114,7 +118,7 @@ set_default_run() {
   fi
 }
 
-while getopts ':hdlstwD:L:R:S:T:W:' option; do
+while getopts ':hedlstwvD:L:R:S:T:W:' option; do
   case "$option" in
     h) echo "$usage"
        exit
@@ -123,6 +127,9 @@ while getopts ':hdlstwD:L:R:S:T:W:' option; do
       ;;
     D) newDestroyCmd="$OPTARG"
       ;;
+    e) vi .vroom
+       exit
+       ;;
     L) logFile="$OPTARG"
       ;;
     l) logToFile="true"
@@ -137,6 +144,9 @@ while getopts ':hdlstwD:L:R:S:T:W:' option; do
       ;;
     T) newWatchCommand="$OPTARG"
       ;;
+    v) echo "$version"
+       exit
+       ;;
   esac
 done
 shift $((OPTIND -1))
