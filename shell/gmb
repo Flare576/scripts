@@ -1,18 +1,36 @@
 #!/bin/sh
-usage="$(basename "$0") Resets working branch, switches to either master or provided branch, and pulls."
+usage="$(basename "$0") Resets or stashes working branch, switches to either master or provided branch, and fetches. \
+If stashed, pop stash.
+  -d Reset before switching branches"
 
-while getopts ':h' option; do
+while getopts ':hd' option; do
   case "$option" in
     h) echo "$usage"
        exit
-       ;;
+      ;;
+    d) delete="true"
+      ;;
   esac
 done
+shift $((OPTIND -1))
 
+current=$(git branch | grep \* | cut -d ' ' -f2)
+changes=$(git diff HEAD)
 BRANCH=master
+original=$(git branch | grep \* | cut -d ' ' -f2)
 if [ -n "$1" ] ; then
   BRANCH="$1"
 fi
+
+if [ -n "$changes" ] && [ "$delete" != "true" ] ; then
+  git stash
+fi
+
 git reset --hard
-git checkout "$BRANCH"
-git pull
+git switch "$BRANCH"
+git fetch
+git reset --hard origin/"$BRANCH"
+
+if [ -n "$changes" ] && [ "$delete" != "true" ] ; then
+  git stash pop
+fi
