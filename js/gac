@@ -12,6 +12,7 @@ const argv = require('yargs')
   .option( 'no-verify', {alias: 'n', type: 'boolean', description: 'Passed through to git commit' })
   .option( 'skip', { alias: 's', type: 'boolean', description: 'Skip Adding files' })
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
+  .option( 'pullRequest', { alias: 'r', type: 'boolean', description: 'Flag to start a PR after commit' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -j', 'Adds all files/subfolder files, then opens a verbose commit, then perfoms npm version bump' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
@@ -65,12 +66,19 @@ const {execSync, spawn} = require('child_process');
     console.log(data.toString('utf8'));
   });
   git.on('close', (code) => {
-    if ( argv.push && (
-      code === 0
+    if (code === 0
       || errors === ''
       || errors.includes('No changes detected')
-    )){
-      execSync('git push');
+    ) {
+      if (argv.push){
+        let cmd = 'git push';
+        if (argv.amend) {
+          cmd += ' -f';
+        }
+        execSync(cmd);
+      }
+      if(argv.pullRequest)
+        spawn('hub', ['pull-request', '-p'], {stdio: [ 'inherit', 'inherit', 'pipe' ]});
     }
   });
 })();
