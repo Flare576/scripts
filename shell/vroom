@@ -5,7 +5,7 @@
 # 03/09/2019 update - massive overhaul, adding `start:local`, adding project config
 # 03/09/2020 update - annual overhaul
 version=9.23.1
-usage="$(basename "$0") [-hdelLsStTv] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
+usage="$(basename "$0") [-hdelLstv] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
 • Base depends on language, package manager, etc.
 • Setup would be setting up linking, cleaning dist/node_modules, etc, and is not run by default (-s).
 • Run is the main executor of your project locally. If undefined, $0 will do its best to determine what it should be
@@ -14,24 +14,20 @@ usage="$(basename "$0") [-hdelLsStTv] Five main parts: base, setup, run, watch, 
 *NOTE: Base is internally handled, while setup, run, and destroy are defined by local .vroom file.
   -h show this message
   -e edit config
+  -f fast mode, run without initial setup
   -l log to server.log or provided -Logfile
   -L Change output file (implies -l)
   -s run Setup command, then Run command
-  -S update Setup command (does not imply -s)
-  -R update Run command
-  -W update Watch comamnd (does not imply -w)
   -w run Watch command after Run command
   -D update Destroy command (does not imply -d)
   -d Destroy: only run Destroy command
   -v Prints version info
 Examples: (assumes a NodeJS yarn project)
   vroom: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd
+  vroom -e: Edit .vroom file in current directory
+  vroom -f: Setup NVM, switch to the right NPM version, run the runCMD
   vroom -s: Setup NVM, switch to the right NPM version, do 'yarn install', run the setupCmd and run the runCmd
-  vroom -S \"echo 'hello'\":  Setup NVM, switch to the right NPM version, do 'yarn install', set the setupCmd to \
-  vroom -s -S \"echo 'hello'\": Setup NVM, switch to the right NPM version, do 'yarn install', set the setupCmd to \
-    echo 'hello', run setupCmd and run the runCmd
   vroom -l: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'server.log'
-  vroom -L 'foo': Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'foo'
   vroom -d: Setup NVM, switch to the right NPM version, do 'yarn install', run the destroyCmd"
 
 echo_cmd() {
@@ -39,7 +35,9 @@ echo_cmd() {
 }
 
 base_project() {
-  changes=$(git diff --name-only)
+  if [ -d '.git' ]; then
+    changes=$(git diff --name-only)
+  fi
   files=$(ls -al)
 
   # Check for project type
@@ -62,8 +60,14 @@ base_project() {
     fi
   fi # Right now just NodeJS
 
-  echo_cmd "Installing dependencies with $manager $setup"
-  eval "$manager $setup"
+  if [ -n "$manager" ]; then
+    if [ -z "$fastMode" ]; then
+      echo_cmd "Installing dependencies with $manager $setup"
+      eval "$manager $setup"
+    else
+      echo "Fast Mode: Skipping base $manager $setup"
+    fi
+  fi
 }
 
 configure_setup() {
@@ -107,46 +111,49 @@ configure_run() {
 }
 
 set_default_run() {
-  # checks for, in order, `start:local`, `dev`, `start` as default
-  scripts=$(eval "$manager")
+  # checks for, in order, `start:local`, `start:dev`, `dev`, `start` as default
+  scripts=$(eval "$manager run")
   if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
-    runCmd="$runCmdNew start:local"
+    runCmd="$manager run start:local"
+  elif [[ "$scripts" =~ '[[:space:]]+start:dev[[:space:]]+' ]] ; then
+    runCmd="$manager run start:dev"
   elif [[ "$scripts" =~ '[[:space:]]+dev[[:space:]]+' ]] ; then
-    runCmd="$runCmdNew dev"
+    runCmd="$manager run dev"
   else
-    runCmd="$runCmdNew start"
+    runCmd="$manager run start"
   fi
 }
 
-while getopts ':hedlstwvD:L:R:S:T:W:' option; do
+editConfig() {
+  if [ ! -f '.vroom' ] ; then
+    echo "setupCmd=\nrunCmd=\nwatchCmd=\ndestroyCmd=" > .vroom
+  fi
+  vi .vroom
+}
+
+while getopts ':hefdlstwvL:' option; do
   case "$option" in
     h) echo "$usage"
-       exit
-       ;;
+      exit
+      ;;
     d) doDestroy="true"
       ;;
-    D) newDestroyCmd="$OPTARG"
+    e) editConfig
+      exit
       ;;
-    e) vi .vroom
-       exit
-       ;;
+    f) fastMode="true"
+      ;;
     L) logFile="$OPTARG"
       ;;
     l) logToFile="true"
       ;;
-    r) newRunCmd="$OPTARG"
-      ;;
     s) doSetup="true"
-      ;;
-    S) newSetupCommand="$OPTARG"
       ;;
     w) doWatch="true"
       ;;
-    T) newWatchCommand="$OPTARG"
-      ;;
     v) echo "$version"
-       exit
-       ;;
+      exit
+      ;;
   esac
 done
 shift $((OPTIND -1))
@@ -164,7 +171,7 @@ fi
 base_project
 
 # Handle updating unchanged branch
-if [ -z "$changes" ] ; then
+if [ -d ".git" ] && [ -z "$changes" ] ; then
   eval "echo 'no local changes, pulling from origin' $cmdSuffix";
   git pull > /dev/null 2>&1
 fi
@@ -173,7 +180,13 @@ fi
 #new: setupCmd, runCmd, watchCmd, destroyCmd
 config="$(pwd)/.vroom"
 if [ -f "$config" ] ; then
-  while read -r line; do declare "$line"; done < "$config"
+  while read -r line; do
+    if [ -n "$line" ] && [[ "$line" != "#"* ]] ; then
+      declare "$line";
+    else
+      configComments="$line$configComments"
+    fi
+  done < "$config"
 fi
 
 if [ -n "$resetCmd" ]; then setupCmd="$resetCmd"; fi
@@ -184,7 +197,11 @@ configure_watch
 configure_destroy
 
 # Write out the config
-echo "setupCmd=$setupCmd" > $config
+rm $config
+if [ -n "$configComments" ] ; then
+  echo "$configComments" >> $config
+fi
+echo "setupCmd=$setupCmd" >> $config
 echo "runCmd=$runCmd" >> $config
 echo "watchCmd=$watchCmd" >> $config
 echo "destroyCmd=$destroyCmd" >> $config
