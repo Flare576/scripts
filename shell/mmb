@@ -1,8 +1,8 @@
 #!/bin/sh
 usage="$(basename "$0") [-cdhr] [<branch>]'Merge Master Branch' manages merging with master. Optionally, resets \
-  working branch (-d), switches to either master or provided branch, pulls, switches back and starts merge.
+  working branch (-d), fetches from origin, starts merge or rebase if [-r] provided.
   -c Clean up .orig files and exit
-  -d Reset branch
+  -d Delete working branch
   -r Runs rebase instead of merge
   <branch> Branch to use instead of master"
 
@@ -28,6 +28,7 @@ if [ "$clean" == "true" ] ; then
 fi
 
 current=$(git branch | grep \* | cut -d ' ' -f2)
+changes=$(git diff HEAD)
 BRANCH="master"
 if [ -n "$1" ] ; then
   BRANCH="$1"
@@ -35,18 +36,57 @@ fi
 BRANCH="origin/$BRANCH"
 git fetch
 
-if [ "$delete" == "true" ] ; then
-  git reset --hard
-else
-  git stash
+if [ -n "$changes" ] ; then
+  if [ "$delete" == "true" ] ; then
+    git reset --hard
+  else
+    git stash
+  fi
 fi
 
 if [ -n "$rebase" ] ; then
   git rebase -i "$BRANCH"
+  lastcode=$?
+  if [ $lastcode -ne 0 ] ; then
+    echo "git rebase -i returned non-zero result code: $lastcode"
+  fi
 else
   git merge "$BRANCH"
+  lastcode=$?
+  if [ $lastcode -ne 0 ] ; then
+    echo "git merge returned non-zero result code: $lastcode"
+  fi
 fi
 
-if [ "$delete" != "true" ] ; then
-  git stash pop
+if [ $lastcode -ne 0 ] ; then
+    echo "****\nThere were merge conflicts.\n****\n Starting merge with mergetool, but if you want to stop, just exit \
+vim with ':cq' and then Ctrl+C"
+    read -p ""
+    lastcode=0
+
+    while [ $lastcode -eq 0 ]
+    do
+      git mergetool
+      lastcode=$?
+      if [ $lastcode -eq 0 ]; then
+        if [ -n "$rebase" ]; then
+          git rebase --continue > /dev/null 2>&1
+          lastcode=$?
+        else
+          git commit
+          lastcode=1
+        fi
+      else
+        echo "git mergetool returned non-zero result code: $lastcode"
+      fi
+    done
+fi
+
+dirtyMerge=$(git diff HEAD)
+if [ -n "$changes" ] && [ "$delete" != "true" ] ; then
+  if [ -n "$dirtyMerge" ] ; then
+    echo "I stashed your changes, but since the merge went... questionably, I didn't un-stash. ($dirtyMerge)"
+  else
+    git stash pop
+  fi
 fi
