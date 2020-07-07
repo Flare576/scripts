@@ -19,14 +19,22 @@ const argv = require('yargs')
 const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
 const fs = require('fs');
+// todo: wire this shit up
+const compareImages = require('resemblejs/compareImages');
 const iExif = require('exif').ExifImage;
 const vExif = require('exiftool-vendored').exiftool;
+const {
+  appendLogFile,
+  logSameLine,
+  staticLog,
+  filesWithFolders
+} = require 'scriptUtils';
 
-const extensionsToIgnore = ['.htm', '.html', '.ind', '.zip', '.pdf', '.mp3', '.txt', '.epub', '.ipk', '.exe', '.php' ];
+const ignoreExts = ['.htm', '.html', '.ind', '.zip', '.pdf', '.mp3', '.txt', '.epub', '.ipk', '.exe', '.php' ];
 const alternateExts = ['.psd', '.gif'];
+const deleteExts = ['.db', '.ini', '.info', '.htaccess', '.ds_store'];
 const videoExts = ['.mp4', '.m4v', '.mpg', '.avi', '.3g2','.mov', '.3gp'];
 const imageExts = ['.ctg', '.png', '.tif', '.crw', '.jpeg', '.jpg'];
-const extensionsToDelete = ['.db', '.ini', '.info', '.htaccess', '.ds_store'];
 let changeLog = [];
 let knownFolders = {};
 let existingDates = {};
@@ -39,23 +47,6 @@ if (argv.extensions === 'video') {
   validExts = videoExts;
 } else if(argv.extensions === 'image') {
   validExts = imageExts;
-}
-
-const appendLogFile = (file, content) => {
-  fs.appendFileSync(file, `\n** New Log ${Date.now()}\n${content}`, 'utf-8');
-}
-
-const logSameLine = (line) => {
-  const trimLine = line.substring(0, 120);
-  process.stdout.clearLine();
-  process.stdout.cursorTo(0);
-  process.stdout.write(trimLine);
-}
-
-const staticLog = (line) => {
-  process.stdout.clearLine();
-  process.stdout.cursorTo(0);
-  console.log(line);
 }
 
 const deleteEmptyFolders = (folder) => {
@@ -87,32 +78,6 @@ const deleteEmptyFolders = (folder) => {
     }
     return false;
   }
-}
-
-const filesWithFolders = (folder, list, subFolder = '') => {
-  const files = fs.readdirSync(folder);
-  files.forEach((fileName) => {
-    const fullPath = `${folder}/${fileName}`;
-    logSameLine(fullPath);
-    const stats = fs.statSync(fullPath);
-    if (stats.isDirectory()){
-      filesWithFolders(fullPath, list, fileName.replace(/[^a-zA-Z0-9]/g, ''));
-    } else {
-      const ext = fileName.substring(fileName.lastIndexOf('.'));
-      if (extensionsToDelete.includes(ext.toLowerCase())) {
-        fs.unlinkSync(fullPath);
-      } else if (
-        extensionsToIgnore.includes(ext.toLowerCase())
-        || (argv.text && !fullPath.toLowerCase().includes(argv.text.toLowerCase()))
-        || (!validExts.includes(ext.toLowerCase()))
-      ){
-        ignored.push(fullPath);
-      } else {
-        list.push({ fileName, ext, folder, fullPath, subFolder, size: stats.size });
-      }
-    }
-  });
-  return list;
 }
 
 const moveImage = async (oldFile, newFolder) => {
@@ -245,7 +210,12 @@ const extract = async (fullPath, guess = false) => {
 
 const getFileList = (baseFolder) => {
   if (!argv.quiet) staticLog(`Scanning ${baseFolder}`);
-  const files = filesWithFolders(baseFolder, []);
+  const files = filesWithFolders(baseFolder, [], {
+    validExts,
+    ignoreExts,
+    deleteExts:  extensionsToDelete
+    ignoreText: argv.text,
+  });
   return files;
 }
 
@@ -275,16 +245,12 @@ const getFileDate = (fullPath) => {
     candidates = [intake];
     intakeFiles = getFileList(intake);
     staticLog('Comparing candidates list against primary pictures folder');
-    const knownFiles = getFileList('/mnt/f/Pictures');
+    const knownFiles = getFileList(argv.prefilter);
     let missing = [];
 
     intakeFiles.forEach((dupCheck) => {
       logSameLine(`Pre-Move Duplicate Checking for ${dupCheck.fileName}`);
-      const knownCopy = knownFiles.find((good) => {
-        if (good.fileName === dupCheck.fileName) {
-          return good.subFolder === dupCheck.subFolder;
-        }
-      });
+      const knownCopy = knownFiles.find((good) => good.fileName === dupCheck.fileName);
       if (!knownCopy) {
         missing.push(dupCheck);
       }
