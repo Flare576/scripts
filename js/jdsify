@@ -1,0 +1,42 @@
+#!/bin/sh
+":" //;NODE_PATH=$(npm -g root) exec node -r $(dirname $0)/sideLoad.js -- "$0" "$@"
+  const usage = `Put a useful comment here`;
+const argv = require('yargs')
+  .usage(usage)
+  .alias('help', 'h')
+  .option( 'dry_run', { alias: 'd', type: 'boolean', description: 'Only Log' })
+  .option( 'input', { alias: 'i', type: 'string', description: 'Rename files in this folder' })
+.argv;
+const inquirer = require('inquirer');
+const {execSync, spawn} = require('child_process');
+const fs = require('fs').promises;
+const {
+  replaceLogFile,
+  logSameLine,
+  staticLog,
+  filesWithFolders
+} = require('./scriptUtils');
+
+(async () => {
+  const newExts = [];
+  const { good } = await filesWithFolders(argv.input);
+  for (file of good) {
+    const { fullPath, ext, baseFileName, folder } = file;
+    const newExt = `.jds${ext.toLowerCase()}`;
+    if (!newExts.includes(newExt)) {
+      newExts.push(newExt);
+    }
+
+    const newPath = `${folder}/${baseFileName}${newExt}`;
+    logSameLine(`Moving ${fullPath} to ${newPath}`);
+    if (!argv.dry_run) {
+      await fs.rename(fullPath, newPath);
+    }
+  }
+  staticLog(`New extensions are\n${newExts.join('\n')}`);
+  replaceLogFile(`${argv.input}/mylog.log`);
+  // Do what you do
+})();
+
+// vim: ft=javascript
+

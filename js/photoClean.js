@@ -10,8 +10,10 @@ const argv = require('yargs')
   .option( 'guess', { alias: 'g', type: 'boolean', description: 'Use other data to find date if exif not found' })
   .option( 'intake', { alias: 'i', type: 'string', demandOption: true,  description: 'intake folder' })
   .option( 'move', { alias: 'm', type: 'boolean', description: 'Move instead of copy' })
-  .option( 'output', { alias: 'o', type: 'string', demandOption: true, description: 'destination folder' })
-  .option( 'prefilter', { alias: 'p', type: 'string', description: 'pre-process against provided folder' })
+  .option( 'photo_out', { alias: 'p', type: 'string', demandOption: true, description: 'destination folder for photos' })
+  .option( 'video_out', { alias: 'v', type: 'string', demandOption: true, description: 'destination folder for videos' })
+  .option( 'log_out', { alias: 'l', type: 'string', demandOption: true, description: 'destination folder for logs' })
+  .option( 'filter_against', { alias: 'f', type: 'string', description: 'pre-process against provided folder' })
   .option( 'quiet', { alias: 'q', type: 'boolean', description: 'print a litle less' })
   .option( 'small', { alias: 's', type: 'number', default: .5, description: 'size for cutoff of "small" in MB (0.5 default)' })
   .option( 'text', { alias: 't', type: 'string', description: 'Text to match original photo on' })
@@ -21,20 +23,19 @@ const {execSync, spawn} = require('child_process');
 const fs = require('fs');
 // todo: wire this shit up
 const compareImages = require('resemblejs/compareImages');
-const iExif = require('exif').ExifImage;
 const vExif = require('exiftool-vendored').exiftool;
 const {
   appendLogFile,
   logSameLine,
   staticLog,
-  filesWithFolders
-} = require 'scriptUtils';
+  filesWithFolders,
+} = require('./scriptUtils');
 
 const ignoreExts = ['.htm', '.html', '.ind', '.zip', '.pdf', '.mp3', '.txt', '.epub', '.ipk', '.exe', '.php' ];
 const alternateExts = ['.psd', '.gif'];
 const deleteExts = ['.db', '.ini', '.info', '.htaccess', '.ds_store'];
 const videoExts = ['.mp4', '.m4v', '.mpg', '.avi', '.3g2','.mov', '.3gp'];
-const imageExts = ['.ctg', '.png', '.tif', '.crw', '.jpeg', '.jpg'];
+const photoExts = ['.ctg', '.png', '.tif', '.crw', '.jpeg', '.jpg'];
 let changeLog = [];
 let knownFolders = {};
 let existingDates = {};
@@ -42,11 +43,11 @@ let duplicates = [];
 let ignored = [];
 let failed = [];
 let guessed = [];
-let validExts = ['.jpg', '.jpeg'];
-if (argv.extensions === 'video') {
-  validExts = videoExts;
-} else if(argv.extensions === 'image') {
-  validExts = imageExts;
+let validExts = [];
+if (argv.video_out) {
+  validExts = validExts.concat(videoExts);
+} else if(argv.photo_out) {
+  validExts = validExts.concat(photoExts);
 }
 
 const deleteEmptyFolders = (folder) => {
@@ -66,10 +67,6 @@ const deleteEmptyFolders = (folder) => {
         }
       }
     });
-    if (files.length === 1 && files[0] === 'list.log') {
-      fs.unlinkSync(`${folder}/list.log`);
-      files.pop();
-    }
 
     if (!files.length) {
       logSameLine(`Deleting ${folder}`);
@@ -80,24 +77,38 @@ const deleteEmptyFolders = (folder) => {
   }
 }
 
-const moveImage = async (oldFile, newFolder) => {
+const moveImage = async (oldFile) => {
   const { fullPath, dateTaken, iDate, size } = oldFile;
   let ext = oldFile.ext;
+  let outputRoot;
+  if (argv.video_out && videoExts.includes(ext)) {
+    outputRoot = argv.video_out.replace(/\/$/,'');
+  } else if (argv.photo_out && photoExts.includes(ext)) {
+    outputRoot = argv.photo_out.replace(/\/$/,'');
+  } else {
+    // how did you even get here
+    return;
+  }
+  let smallPiece = '';
   if (size < argv.small * 1000000) {
     ext = `s${ext}`
-    newFolder = newFolder.replace(argv.output, `${argv.output}/small`);
+    smallPiece = '/small';
   }
+
+  let destFolder = `${outputRoot}${smallPiece}/${oldFile.dateTaken}`;
+  let finalFileName;
+
   let num = 0;
-  if (!fs.existsSync(newFolder)) {
-    if (!argv.dry_run) fs.mkdirSync(newFolder, { recursive: true });
-    else num = knownFolders[newFolder] || num; // dry-run doesn't create folders, so need to fake the find
+  if (!fs.existsSync(destFolder)) {
+    if (!argv.dry_run) fs.mkdirSync(destFolder, { recursive: true });
+    else num = knownFolders[destFolder] || num; // dry-run doesn't create folders, so need to fake the find
   } else {
-    if (knownFolders[newFolder]) {
-      num = knownFolders[newFolder];
+    if (knownFolders[destFolder]) {
+      num = knownFolders[destFolder];
     } else {
-      const files = fs.readdirSync(newFolder);
+      const files = fs.readdirSync(destFolder);
       for (fileName of files) {
-        const fullPath = `${newFolder}/${fileName}`
+        const fullPath = `${destFolder}/${fileName}`
         const stats = fs.statSync(fullPath);
         if (!stats.isDirectory()){
           logSameLine(`indexing ${fullPath}`);
@@ -111,52 +122,43 @@ const moveImage = async (oldFile, newFolder) => {
           staticLog(`WARNING: Folder not expected: ${fullPath}`);
         }
       };
-      knownFolders[newFolder] = num;
+      knownFolders[destFolder] = num;
     }
   }
 
   const original = existingDates[iDate]?.find(exist => filesEqual(oldFile, exist));
   if (original) {
-    const duplicateFolder = newFolder.replace(argv.output, `${argv.output}/duplicates`);
-    if (!fs.existsSync(duplicateFolder)) {
-      if (!argv.dry_run) fs.mkdirSync(duplicateFolder, { recursive: true });
+    destFolder = `${outputRoot}/duplicates${smallPiece}/${oldFile.dateTaken}`
+    if (!fs.existsSync(destFolder)) {
+      if (!argv.dry_run) fs.mkdirSync(destFolder, { recursive: true });
     }
     let newBaseName = original.fileName.split('.')[0] + '_dup';
     let idx = 1;
-    let newFullPath;
     do {
-      newFullPath = `${duplicateFolder}/${newBaseName}${idx}${oldFile.ext}`;
+      finalFileName = `${newBaseName}${idx}${ext}`;
       idx++;
     }
-    while (fs.existsSync(newFullPath));
+    while (fs.existsSync(`${destFolder}${finalFileName}`));
 
-    duplicates.push(`${oldFile.fullPath} -> ${newFullPath}`);
-    changeLog.push(`COPY ${fullPath} -> ${newFullPath}`);
-    if (!argv.dry_run) {
-      if (argv.move) {
-        fs.renameSync(fullPath, newFullPath);
-      } else {
-        fs.copyFileSync(fullPath, newFullPath);
-      }
-    }
+    duplicates.push(`${fullPath} -> ${destFolder}${finalFileName}`);
   } else {
     num++;
     knownFolders[newFolder] = num;
     while(`${num}`.length < 5) num = `0${num}`;
-    const newName = `${dateTaken}_${num}${ext}`;
+    finalFileName = `${dateTaken}_${num}${ext}`;
     if (!existingDates[iDate]) {
       existingDates[iDate] = [];
     }
     existingDates[iDate].push({ fileName: newName, extraData: oldFile.extraData, iDate, size });
-    changeLog.push(`COPY ${fullPath} -> ${newFolder}/${newName}`);
+  }
+    changeLog.push(`COPY ${fullPath} -> ${destFolder}/${finalFileName}`);
     if (!argv.dry_run) {
       if (argv.move) {
-        fs.renameSync(fullPath, `${newFolder}/${newName}`);
+        fs.renameSync(fullPath, `${destFolder}/${finalFileName}`);
       } else {
-        fs.copyFileSync(fullPath, `${newFolder}/${newName}`);
+        fs.copyFileSync(fullPath, `${destFolder}/${finalFileName}`);
       }
     }
-  }
 };
 
 const filesEqual = (img1, img2) => {
@@ -169,32 +171,13 @@ const extract = async (fullPath, guess = false) => {
   let iDate;
   let extraData = {};
   try {
-    if (argv.extensions) {
-      const vData = await vExif.read(fullPath);
-      iDate = vData?.DateTimeOriginal?.rawValue || vData?.CreateDate?.rawValue|| vData?.FileModifyDate?.rawValue;
-      if (!iDate) {
-        throw new Error(`No DateTimeOriginal found in media file: ${JSON.stringify(vData, null, 2)}`);
-      }
-    } else {
-      const imageData = await new Promise((resolve, reject) => {
-        new iExif({ image: fullPath }, (error, exifData) => {
-          const { image: { Model, ModifyDate } = {}, exif: { CreateDate } = {} } = exifData || {};
-          const iDate = CreateDate || ModifyDate;
-          const extraData = { Model };
-          const errorMessage = error
-            ? error.message
-            : !iDate
-            ? 'No CreateDate or ModifyDate found in exif'
-            : iDate === '0000:00:00 00:00:00'
-            ? 'Invalid CreateDate/ModifyDate found in exif (\'0000:00:00 00:00:00\')'
-            : '';
-          if (errorMessage) reject(new Error(errorMessage));
-          else resolve({ iDate, extraData: { Model } });
-        });
-      });
-      iDate = imageData.iDate;
-      extraData = imageData.extraData;
+    const vData = await vExif.read(fullPath);
+    iDate = vData?.DateTimeOriginal?.rawValue || vData?.CreateDate?.rawValue|| vData?.FileModifyDate?.rawValue;
+    if (!iDate) {
+      throw new Error(`No DateTimeOriginal found in media file: ${JSON.stringify(vData, null, 2)}`);
     }
+    iDate = imageData.iDate;
+    extraData = imageData.extraData;
   } catch(error) {
     if (guess) {
       iDate = getFileDate(fullPath);
@@ -208,15 +191,17 @@ const extract = async (fullPath, guess = false) => {
   return { iDate, extraData };
 }
 
-const getFileList = (baseFolder) => {
+const getFileList = async (baseFolder) => {
   if (!argv.quiet) staticLog(`Scanning ${baseFolder}`);
-  const files = filesWithFolders(baseFolder, [], {
+  const { good, ignored: i } = await filesWithFolders(baseFolder, {}, {
     validExts,
     ignoreExts,
-    deleteExts:  extensionsToDelete
+    deleteExts:  deleteExts,
     ignoreText: argv.text,
   });
-  return files;
+
+  ignored = i;
+  return good;
 }
 
 // TODO: Should check filename for date and verify it matches
@@ -241,11 +226,11 @@ const getFileDate = (fullPath) => {
   let candidates = [];
 
   let intakeFiles = [];
-  if (argv.prefilter) {
+  if (argv.filter_against) {
     candidates = [intake];
-    intakeFiles = getFileList(intake);
+    intakeFiles = await getFileList(intake);
     staticLog('Comparing candidates list against primary pictures folder');
-    const knownFiles = getFileList(argv.prefilter);
+    const knownFiles = await getFileList(argv.filter_against);
     let missing = [];
 
     intakeFiles.forEach((dupCheck) => {
@@ -255,7 +240,7 @@ const getFileDate = (fullPath) => {
         missing.push(dupCheck);
       }
     });
-    appendLogFile(`${argv.output}/missing.log`, missing.map(m=>m.fullPath).join('\n'));
+    appendLogFile(`${argv.log_out}/missing.log`, missing.map(m=>m.fullPath).join('\n'));
     staticLog('Replacing candidates list with only "missing" items');
     intakeFiles = missing;
   } else {
@@ -265,11 +250,11 @@ const getFileDate = (fullPath) => {
       choices: fs.readdirSync(intake).filter(file => fs.statSync(`${intake}/${file}`).isDirectory()),
       message: "Which subfolder(s)?",
     }]);
-    responses.candidates.forEach(nom => {
+    await Promise.all(responses.candidates.map(async (nom) => {
       const fullPath = `${intake}/${nom}`;
       candidates.push(fullPath);
-      intakeFiles = intakeFiles.concat(getFileList(fullPath));
-    });
+      intakeFiles = intakeFiles.concat(await getFileList(fullPath));
+    }));
   }
 
   staticLog(`copying ${intakeFiles.length}`);
@@ -290,18 +275,17 @@ const getFileDate = (fullPath) => {
       const dateTaken = image.iDate.substring(0,10).replace(/:/g, '-');
       const year = dateTaken.substring(0,4);
       image.dateTaken = dateTaken;
-      const newFolder = `${argv.output}/${year}/${dateTaken}`;
       await moveImage(image, newFolder);
     }
   };
   if (argv.dry_run) {
-    console.log(`Dry run: see actions ${argv.output}/dryrun.log`);
-    fs.writeFileSync(`${argv.output}/dryrun.log`, changeLog.join('\n'), 'utf-8');
-    fs.writeFileSync(`${argv.output}/dryrun_failed.log`, failed.map(m=> `${m.fullPath}: ${m.error}`).join('\n'));
-    fs.writeFileSync(`${argv.output}/dryrun_duplicates.log`, duplicates.join('\n'));
-    fs.writeFileSync(`${argv.output}/dryrun_ignored.log`, ignored.join('\n'));
+    console.log(`Dry run: see actions ${argv.log_out}/dryrun.log`);
+    fs.writeFileSync(`${argv.log_out}/dryrun.log`, changeLog.join('\n'), 'utf-8');
+    fs.writeFileSync(`${argv.log_out}/dryrun_failed.log`, failed.map(m=> `${m.fullPath}: ${m.error}`).join('\n'));
+    fs.writeFileSync(`${argv.log_out}/dryrun_duplicates.log`, duplicates.join('\n'));
+    fs.writeFileSync(`${argv.log_out}/dryrun_ignored.log`, ignored.join('\n'));
     if (argv.guess) {
-      fs.writeFileSync(`${argv.output}/dryrun_guessed.log`, guessed.map(m=> `${m.fullPath}: ${m.guess}`).join('\n'));
+      fs.writeFileSync(`${argv.log_out}/dryrun_guessed.log`, guessed.map(m=> `${m.fullPath}: ${m.guess}`).join('\n'));
     }
   } else {
     if (argv.clean) {
@@ -310,19 +294,19 @@ const getFileDate = (fullPath) => {
         deleteEmptyFolders(candy);
       });
     }
-    appendLogFile(`${argv.output}/failed.log`, failed.map(m=> `${m.fullPath}: ${m.error}`).join('\n'));
-    appendLogFile(`${argv.output}/duplicates.log`, duplicates.join('\n'));
-    appendLogFile(`${argv.output}/ignored.log`, ignored.join('\n'));
+    appendLogFile(`${argv.log_out}/failed.log`, failed.map(m=> `${m.fullPath}: ${m.error}`).join('\n'));
+    appendLogFile(`${argv.log_out}/duplicates.log`, duplicates.join('\n'));
+    appendLogFile(`${argv.log_out}/ignored.log`, ignored.join('\n'));
     console.log('');
     console.log(`All ${count} files processed:`);
-    console.log(`${count - failed.length} moved (${failed.length} Failed, see ${argv.output}/failed.log)`);
-    console.log(`${duplicates.length} duplicates found, see ${argv.output}/duplicates.log)`);
-    console.log(`${ignored.length} ignored files skipped, see ${argv.output}/ignored.log)`);
+    console.log(`${count - failed.length} moved (${failed.length} Failed, see ${argv.log_out}/failed.log)`);
+    console.log(`${duplicates.length} duplicates found, see ${argv.log_out}/duplicates.log)`);
+    console.log(`${ignored.length} ignored files skipped, see ${argv.log_out}/ignored.log)`);
     if (argv.guess) {
-      console.log(`${guessed.length} guessed dates,see ${argv.output}/guessed.log)`);
-      appendLogFile(`${argv.output}/guessed.log`, guessed.map(m=> `${m.fullPath}: ${m.guess}`).join('\n'));
+      console.log(`${guessed.length} guessed dates,see ${argv.log_out}/guessed.log)`);
+      appendLogFile(`${argv.log_out}/guessed.log`, guessed.map(m=> `${m.fullPath}: ${m.guess}`).join('\n'));
     }
-    appendLogFile(`${argv.output}/changeLog.log`, changeLog.join('\n'), 'utf-8');
+    appendLogFile(`${argv.log_out}/changeLog.log`, changeLog.join('\n'), 'utf-8');
   }
   vExif.end();
 })();
