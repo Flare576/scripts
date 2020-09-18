@@ -6,6 +6,7 @@ const argv = require('yargs')
   .usage(usage)
   .alias('help', 'h')
   .option( 'amend', { alias: 'a', type: 'boolean', description: 'Flag to ammend previous commit' })
+  .option( 'branch', { alias: 'b', type: 'string', description: 'swich to this branch first, then continue' })
   .option( 'file', { alias: 'f', type: 'array', description: 'List of files to add, defaults to `.`' })
   .option( 'fileSkip', { alias: 'F', type: 'array', description: 'List of files to IGNORE' })
   .option( 'message', { alias: 'm', type: 'string', description: 'Message to pass to commit. Omit for -v' })
@@ -14,6 +15,7 @@ const argv = require('yargs')
   .option( 'push', { alias: 'p', type: 'boolean', description: 'Flag to push after commit' })
   .option( 'pullRequest', { alias: 'r', type: 'boolean', description: 'Flag to start a PR after commit' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
+  .example( 'gac -b new-stuff', 'Switch (and create if necessary) to `new-stuff` branch, add all files/subfolder files, then open verbose commit' )
   .example( 'gac -j', 'Adds all files/subfolder files, then opens a verbose commit, then perfoms npm version bump' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in amment/verbose' )
   .example( 'gac -f myFile', 'Adds `myFile` to stage, then opens verbose commit' )
@@ -28,6 +30,9 @@ const {execSync, spawn} = require('child_process');
 
 (async () => {
   const customFileAmendFlag = argv.amend && (argv.file || argv.fileSkip);
+  if (argv.branch) {
+    execSync(`git switch -c ${argv.branch}`)
+  }
   if (!argv.skip) {
     // if an Amend commit is being done with a file listing, need to be sure we're getting the new listing
     if (customFileAmendFlag) {
@@ -78,7 +83,7 @@ const {execSync, spawn} = require('child_process');
         execSync(cmd);
       }
       if(argv.pullRequest)
-        spawn('hub', ['pull-request', '-p'], {stdio: [ 'inherit', 'inherit', 'pipe' ]});
+        spawn('hub', ['pull-request', '-p', '-c'], {stdio: [ 'inherit', 'inherit', 'pipe' ]});
     }
   });
 })();
