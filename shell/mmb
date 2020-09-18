@@ -70,7 +70,7 @@ vim with ':cq' and then Ctrl+C"
       lastcode=$?
       if [ $lastcode -eq 0 ]; then
         if [ -n "$rebase" ]; then
-          git rebase --continue > /dev/null 2>&1
+          git rebase --continue 2> /dev/null
           lastcode=$?
         else
           git commit
