@@ -30,8 +30,11 @@ fi
 current=$(git branch | grep \* | cut -d ' ' -f2)
 changes=$(git diff HEAD)
 BRANCH="master"
+if [ -n "$MASTER_OVERRIDE" ] ; then
+    BRANCH="$MASTER_OVERRIDE"
+fi
 if [ -n "$1" ] ; then
-  BRANCH="$1"
+    BRANCH="$1"
 fi
 BRANCH="origin/$BRANCH"
 git fetch
