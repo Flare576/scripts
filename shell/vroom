@@ -41,11 +41,17 @@ base_project() {
   files=$(ls -al)
 
   # Check for project type
+  # Node w/ NVM/NPM/Yarn/etc.
   if [[ "$files" =~ ".nvmrc" ]]; then
     echo_cmd "Found .nvmrc file; wiring up NVM"
-    export NVM_DIR="$HOME/.nvm"
-    . "/usr/local/opt/nvm/nvm.sh"
-    eval "nvm install"
+    # assume things are wired up normally
+    source "$NVM_DIR/nvm.sh" > /dev/null 2>&1
+    # this is the old style, so support it for now
+    if [ $? -ne 0 ]; then
+      export NVM_DIR="$HOME/.nvm"
+      . "/usr/local/opt/nvm/nvm.sh"
+    fi
+    nvm install
     if [[ "$files" =~ "yarn.lock" ]]; then
       manager="yarn"
       setup='install'
@@ -58,14 +64,18 @@ base_project() {
         setup="install"
       fi
     fi
-  fi # Right now just NodeJS
+  # PHP
+  elif [ -f 'composer.json' ]; then
+    manager="composer"
+    setup="install"
+  fi
 
   if [ -n "$manager" ]; then
     if [ -z "$fastMode" ]; then
       echo_cmd "Installing dependencies with $manager $setup"
       eval "$manager $setup"
     else
-      echo "Fast Mode: Skipping base $manager $setup"
+      echo "Fast Mode: Skipping initial $manager $setup"
     fi
   fi
 }
@@ -85,7 +95,7 @@ configure_destroy() {
     if [ -n "$newDestroyCommand" ]; then
       destroyCmd="$newDestroyCommand"
     else
-      destroyCmd="./nuke.sh"
+      destroyCmd="echo 'Chill. Have a 🥃'"
     fi
   fi
 }
@@ -95,7 +105,7 @@ configure_watch() {
     if [ -n "$newWatchCommand" ]; then
       watchCmd="$newWatchCommand"
     else
-      watchCmd="echo '🥃'"
+      watchCmd="echo 'Why not watch a 🥃'"
     fi
   fi
 }
@@ -181,10 +191,18 @@ fi
 config="$(pwd)/.vroom"
 if [ -f "$config" ] ; then
   while read -r line; do
-    if [ -n "$line" ] && [[ "$line" != "#"* ]] ; then
-      declare "$line";
+    fullLine="$fullLine$line"
+    if [[ "${line: -1}" == '\' ]] ; then
+      # to allow trailing-slash syntax in config file for readibility,
+      # need to manually parse/handle them. First, restore the \\ and \n
+      fullLine="$fullLine"'\\n '
     else
-      configComments="$line$configComments"
+      if [ -n "$fullLine" ] && [[ "$fullLine" != "#"* ]] ; then
+        declare "$fullLine"
+      else
+        configComments="$line$configComments"
+      fi
+      fullLine=""
     fi
   done < "$config"
 fi
@@ -201,10 +219,18 @@ rm $config
 if [ -n "$configComments" ] ; then
   echo "$configComments" >> $config
 fi
+#echo "setupCmd=$(setupCmd//';'/';\n')" >> $config
 echo "setupCmd=$setupCmd" >> $config
 echo "runCmd=$runCmd" >> $config
 echo "watchCmd=$watchCmd" >> $config
 echo "destroyCmd=$destroyCmd" >> $config
+
+# If we added characters to support trailing slashes,
+# remove them *and* the slash before execution
+setupCmd=${setupCmd//'\\\n'}
+runCmd=${runCmd//'\\\n'}
+watchCmd=${watchCmd//'\\\n'}
+destroyCmd=${destroyCmd//'\\\n'}
 
 if [[ "$doDestroy" == "true" ]]; then
   echo_cmd "running destroy [$destroyCmd]"
