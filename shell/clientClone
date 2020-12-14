@@ -1,14 +1,16 @@
 #!/bin/sh
 usage="$(basename "$0") Clones the supplied URL down, updates the gitConfig to include the .gitconfig one folder up.
-It works best if you follow a structure like .../<company1>/.gitconfig:w
+It works best if you follow a structure like
 |- company1
 |--- .gitConfig
 |--- projectA
 |----- .git
 |--- projectB
+|----- .git
 |- company2
-|--- .gitCOnfig
+|--- .gitConfig
 |----- projectC
+|----- .git
 
 etc., where each company has its own .gitconfig with user.name and user.email.
 
