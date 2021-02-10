@@ -6,29 +6,56 @@
 # 03/09/2020 update - annual overhaul
 version=9.23.1
 usage="$(basename "$0") [-hdelLstv] Five main parts: base, setup, run, watch, destroy. Logs to STDOUT unless -l is provided.
-• Base depends on language, package manager, etc.
-• Setup would be setting up linking, cleaning dist/node_modules, etc, and is not run by default (-s).
-• Run is the main executor of your project locally. If undefined, $0 will do its best to determine what it should be
-• Watch when RunCmd exits (e.g., containerized), use this to run a long-running 'watch' command (-w).
-• Destroy generally undoes all the things that Setup does.
-*NOTE: Base is internally handled, while setup, run, and destroy are defined by local .vroom file.
+• With no paramters, assumes -r, if [dsw] then -r is not assumed and must be explicitly requested
+• Base: handled internally based on language, package manager, etc.
+• Destroy: generally undoes all the things that Setup does.
+• Setup: Setting up linking, cleaning dist/node_modules, etc. Default is no-op
+  * Avoid using 'npm ci' or 'pipenv install'; these will be called in Base.
+• Run: Main executor of your project locally. Default is best-guess
+• Watch: When RunCmd exits (e.g., containerized), use this to run a long-running 'watch' command
+*NOTE: Setup, Run, and Destroy are defined by local .vroom file.
+
+Config file (.vroom):
+For multiple short commands, use semi-colon, e.g.:
+  runCmd=cmd1; cmd2; cmd3
+Also supports multi-line commands using standard terminal-backslash, e.g.:
+  runCmd=cmd1 \\
+    cmd2 \\
+    cmd3 # Note no backslash on last line
+
+Supported auto-configure platforms are
+• Docker / Docker-Compose
+• Python (with Pipfile)
+• NPM (with package.json)
+• Yarn (with yarn.lock)
+• PHP/Composer (with composer.json)
+
+Other platforms can still be setup manually; just start with vroom -e
+
+Options:
   -h show this message
   -e edit config
-  -f fast mode, run without initial setup
-  -l log to server.log or provided -Logfile
+  -p print config
+  -f fast mode, skip Base setup
+  -l log to server.log or provided -L param
   -L Change output file (implies -l)
-  -s run Setup command, then Run command
-  -w run Watch command after Run command
-  -D update Destroy command (does not imply -d)
-  -d Destroy: only run Destroy command
+  -s execute Setup command
+  -w execute Watch command  after other operations
+  -d execute Destroy command
   -v Prints version info
-Examples: (assumes a NodeJS yarn project)
-  vroom: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd
-  vroom -e: Edit .vroom file in current directory
-  vroom -f: Setup NVM, switch to the right NPM version, run the runCMD
-  vroom -s: Setup NVM, switch to the right NPM version, do 'yarn install', run the setupCmd and run the runCmd
-  vroom -l: Setup NVM, switch to the right NPM version, do 'yarn install', and run the RunCmd, log all to 'server.log'
-  vroom -d: Setup NVM, switch to the right NPM version, do 'yarn install', run the destroyCmd"
+
+Examples: (assumes a NodeJS yarn project, note that 'yarn install' is part of internal Base)
+  vroom: Setup NVM, switch to the right NPM version, do 'yarn install', and execute the RunCmd
+  vroom -f: Setup NVM, switch to the right NPM version, execute the runCmd
+  vroom -l: Setup NVM, switch to the right NPM version, do 'yarn install', execute the runCmd, log all to 'server.log'
+  vroom -e: Edit .vroom file from current directory
+  vroom -p: Print .vroom file from current directory
+  vroom -s: Setup NVM, switch to the right NPM version, do 'yarn install', execute the setupCmd
+  vroom -fr: Setup NVM, switch to the right NPM version, execute the runCmd
+  vroom -sr: Setup NVM, switch to the right NPM version, do 'yarn install', execute setupCmd then runCmd
+  vroom -lrs: Setup NVM, switch to the right NPM version, do 'yarn install', and execute the RunCmd, log all to 'server.log'
+  vroom -d: Setup NVM, switch to the right NPM version, do 'yarn install', execute the destroyCmd
+  vroom -dfsr: Setup NVM, switch to the right NPM version, execute destroyCmd, skip Base, execute setupCmd then runCmd"
 
 echo_cmd() {
   echo $(echo $1 | sed 's/;/;\\n/g')
@@ -41,8 +68,17 @@ base_project() {
   files=$(ls -al)
 
   # Check for project type
-  # Node w/ NVM/NPM/Yarn/etc.
-  if [[ "$files" =~ ".nvmrc" ]]; then
+  if [ -f "docker-compose-local.yml" ]; then
+    manager="docker-compose -f docker-compose-local.yml"
+    setup="build"
+  elif [ -f "docker-compose.yml" ]; then
+    manager="docker-compose"
+    setup="build"
+  elif [ -f "Dockerfile" ]; then
+    manager="docker"
+    setup="build -t $(basename $(pwd):1) ."
+  elif [[ "$files" =~ ".nvmrc" ]]; then
+    # Node w/ NVM/NPM/Yarn/etc.
     echo_cmd "Found .nvmrc file; wiring up NVM"
     # assume things are wired up normally
     source "$NVM_DIR/nvm.sh" > /dev/null 2>&1
@@ -64,9 +100,13 @@ base_project() {
         setup="install"
       fi
     fi
-  # PHP
   elif [ -f 'composer.json' ]; then
+    # PHP
     manager="composer"
+    setup="install"
+  elif [ -f 'Pipfile' ]; then
+    # Python
+    manager="pipenv"
     setup="install"
   fi
 
@@ -82,9 +122,11 @@ base_project() {
 
 configure_setup() {
   if [ -z "$setupCmd" ] || [ -n "$newSetupCommand" ]; then
+    updateConfig="true"
     if [ -n "$newSetupCommand" ]; then
       setupCmd="$newSetupCommand"
     else
+      destroyCmd="echo 'Basic install in Base; Have a 🥃 while you consider any special cases'"
       setupCmd="$manager $setup"
     fi
   fi
@@ -92,6 +134,7 @@ configure_setup() {
 
 configure_destroy() {
   if [ -z "$destroyCmd" ] || [ -n "$newDestroyCommand" ]; then
+    updateConfig="true"
     if [ -n "$newDestroyCommand" ]; then
       destroyCmd="$newDestroyCommand"
     else
@@ -102,6 +145,7 @@ configure_destroy() {
 
 configure_watch() {
   if [ -z "$watchCmd" ] || [ -n "$newWatchCommand" ]; then
+    updateConfig="true"
     if [ -n "$newWatchCommand" ]; then
       watchCmd="$newWatchCommand"
     else
@@ -112,6 +156,7 @@ configure_watch() {
 
 configure_run() {
   if [ -z "$runCmd" ] || [ -n "$newRunCommand" ]; then
+    updateConfig="true"
     if [ -n "$newRunCommand" ]; then
       runCmd="$newRunCommand"
     else
@@ -121,27 +166,42 @@ configure_run() {
 }
 
 set_default_run() {
-  # checks for, in order, `start:local`, `start:dev`, `dev`, `start` as default
-  scripts=$(eval "$manager run")
-  if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]] ; then
-    runCmd="$manager run start:local"
-  elif [[ "$scripts" =~ '[[:space:]]+start:dev[[:space:]]+' ]] ; then
-    runCmd="$manager run start:dev"
-  elif [[ "$scripts" =~ '[[:space:]]+dev[[:space:]]+' ]] ; then
-    runCmd="$manager run dev"
+  if [ -f "docker-compose-local.yml" ] || [ -f "docker-compose.yml" ]; then
+    if [ -f "docker-compose-local.yml" ]; then
+      src="docker-compose-local.yml"
+    else
+      src="docker-compose.yml"
+    fi
+    target=$(sed -e "s/.*target:[ *]//;t1" -e "d" -e ":1" -e "q" "$src")
+    runCmd="$manager run $target"
+  elif [ -f "Dockerfile" ]; then
+    runCmd="$manager run $(basename $(pwd):1)"
+  elif [ -f "Pipfile" ]; then
+    runCmd="echo \"\e[31;47mCan't predict Python main file! Run \e[32m'vroom -e'\e[31m and set runCmd to your start command!\e[0m\""
   else
-    runCmd="$manager run start"
+    # NPM-based projects will return a list of valid commands from the `run` command
+    # checks for, in order, `start:local`, `start:dev`, `dev`, `start` as default
+    scripts=$(eval "$manager run")
+    if [[ "$scripts" =~ '[[:space:]]+start:local[[:space:]]+' ]]; then
+      runCmd="$manager run start:local"
+    elif [[ "$scripts" =~ '[[:space:]]+start:dev[[:space:]]+' ]]; then
+      runCmd="$manager run start:dev"
+    elif [[ "$scripts" =~ '[[:space:]]+dev[[:space:]]+' ]]; then
+      runCmd="$manager run dev"
+    else
+      runCmd="$manager run start"
+    fi
   fi
 }
 
 editConfig() {
-  if [ ! -f '.vroom' ] ; then
+  if [ ! -f '.vroom' ]; then
     echo "setupCmd=\nrunCmd=\nwatchCmd=\ndestroyCmd=" > .vroom
   fi
   vi .vroom
 }
 
-while getopts ':hefdlstwvL:' option; do
+while getopts ':hepfdlrstwvL:' option; do
   case "$option" in
     h) echo "$usage"
       exit
@@ -151,11 +211,16 @@ while getopts ':hefdlstwvL:' option; do
     e) editConfig
       exit
       ;;
+    p) cat .vroom
+      exit
+      ;;
     f) fastMode="true"
       ;;
     L) logFile="$OPTARG"
       ;;
     l) logToFile="true"
+      ;;
+    r) doRun="true"
       ;;
     s) doSetup="true"
       ;;
@@ -168,8 +233,12 @@ while getopts ':hefdlstwvL:' option; do
 done
 shift $((OPTIND -1))
 
+if [ -z "$doDestroy" ] && [ -z "$doSetup" ] && [ -z "$doWatch" ]; then
+  doRun="true"
+fi
+
 if [ -n "$logToFile" ] || [ -n "$logFile" ]; then
-  if [ -z "$logFile" ] ; then
+  if [ -z "$logFile" ]; then
     logFile="server.log"
   fi
   echo "\033[0;31mrun 'less +F $logFile' to see the logs.\033[0m"
@@ -181,23 +250,21 @@ fi
 base_project
 
 # Handle updating unchanged branch
-if [ -d ".git" ] && [ -z "$changes" ] ; then
+if [ -d ".git" ] && [ -z "$changes" ]; then
   eval "echo 'no local changes, pulling from origin' $cmdSuffix";
   git pull > /dev/null 2>&1
 fi
 
-#old: resetCmd, watchCmd, runCmd
-#new: setupCmd, runCmd, watchCmd, destroyCmd
 config="$(pwd)/.vroom"
-if [ -f "$config" ] ; then
+if [ -f "$config" ]; then
   while read -r line; do
     fullLine="$fullLine$line"
-    if [[ "${line: -1}" == '\' ]] ; then
+    if [[ "${line: -1}" == '\' ]]; then
       # to allow trailing-slash syntax in config file for readibility,
       # need to manually parse/handle them. First, restore the \\ and \n
       fullLine="$fullLine"'\\n '
     else
-      if [ -n "$fullLine" ] && [[ "$fullLine" != "#"* ]] ; then
+      if [ -n "$fullLine" ] && [[ "$fullLine" != "#"* ]]; then
         declare "$fullLine"
       else
         configComments="$line$configComments"
@@ -205,25 +272,27 @@ if [ -f "$config" ] ; then
       fullLine=""
     fi
   done < "$config"
+else
+  updateConfig="true"
 fi
-
-if [ -n "$resetCmd" ]; then setupCmd="$resetCmd"; fi
 
 configure_setup
 configure_run
 configure_watch
 configure_destroy
 
-# Write out the config
-rm $config
-if [ -n "$configComments" ] ; then
-  echo "$configComments" >> $config
+# Write out the config if changed
+if [ -n "$updateConfig" ]; then
+  rm $config
+  if [ -n "$configComments" ]; then
+    echo "$configComments" >> $config
+  fi
+  #echo "setupCmd=$(setupCmd//';'/';\n')" >> $config
+  echo "setupCmd=$setupCmd" >> $config
+  echo "runCmd=$runCmd" >> $config
+  echo "watchCmd=$watchCmd" >> $config
+  echo "destroyCmd=$destroyCmd" >> $config
 fi
-#echo "setupCmd=$(setupCmd//';'/';\n')" >> $config
-echo "setupCmd=$setupCmd" >> $config
-echo "runCmd=$runCmd" >> $config
-echo "watchCmd=$watchCmd" >> $config
-echo "destroyCmd=$destroyCmd" >> $config
 
 # If we added characters to support trailing slashes,
 # remove them *and* the slash before execution
@@ -235,7 +304,6 @@ destroyCmd=${destroyCmd//'\\\n'}
 if [[ "$doDestroy" == "true" ]]; then
   echo_cmd "running destroy [$destroyCmd]"
   eval "$destroyCmd"
-  exit
 fi
 
 if [[ "$doSetup" == "true" ]]; then
@@ -243,8 +311,10 @@ if [[ "$doSetup" == "true" ]]; then
   eval "$setupCmd"
 fi
 
-echo_cmd "running Run [$runCmd]"
-eval "$runCmd"
+if [[ "$doRun" == "true" ]]; then
+  echo_cmd "running Run [$runCmd]"
+  eval "$runCmd"
+fi
 
 if [[ "$doWatch" == "true" ]]; then
   echo_cmd "running watch [$watchCmd]"
