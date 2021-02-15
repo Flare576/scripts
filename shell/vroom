@@ -32,6 +32,7 @@ Other platforms can still be setup manually; just start with vroom -e
 
 Options:
   -e edit config
+  -f full run of dsrw
   -d execute Destroy command
   -h show this message
   -l log to server.log or provided -L param
@@ -51,7 +52,7 @@ Examples: (assumes a NodeJS yarn project, note that 'yarn install' is part of in
   vroom -sr: Setup NVM, switch to the right NPM version, execute setupCmd then runCmd
   vroom -lrs: Setup NVM, switch to the right NPM version, execute setupCmd then runCmd, log all to 'server.log'
   vroom -d: Setup NVM, switch to the right NPM version, execute the destroyCmd
-  vroom -dsrw: Setup NVM, switch to the right NPM version, execute destroyCmd, execute setupCmd, runCmd, then watchCmd"
+  vroom -f: Setup NVM, switch to the right NPM version, execute destroyCmd, execute setupCmd, runCmd, then watchCmd"
 
 echo_cmd() {
   echo $(echo $1 | sed 's/;/;\\n/g')
@@ -177,12 +178,13 @@ configure_watch() {
 
 editConfig() {
   if [ ! -f '.vroom' ]; then
-    echo "destroyCmd=\nsetupCmd=\nrunCmd=\nwatchCmd=" > .vroom
+    echo "destroyCmd=\nsetupCmd=\nrunCmd=\nwatchCmd=" | vi -c ":f .vroom" -
+  else
+    vi .vroom
   fi
-  vi .vroom
 }
 
-while getopts ':hepdlrstwvL:' option; do
+while getopts ':hdefpL:lrswv' option; do
   case "$option" in
     h) echo "$usage"
       exit
@@ -192,11 +194,14 @@ while getopts ':hepdlrstwvL:' option; do
     e) editConfig
       exit
       ;;
+    f) doDestroy="true"
+       doRun="true"
+       doSetup="true"
+       doWatch="true"
+      ;;
     p) cat .vroom
       exit
       ;;
-    # f) fastMode="true"
-    #   ;;
     L) logFile="$OPTARG"
       ;;
     l) logToFile="true"
