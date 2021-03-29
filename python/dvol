@@ -1,0 +1,133 @@
+#!/usr/local/bin/python3
+
+import argparse, sys
+from configparser import ConfigParser
+import os
+import jq
+import json
+import yaml
+from shutil import rmtree
+from subprocess import check_output, run
+from git import Repo
+
+def recreate ():
+    if not override:
+        last_args = ['docker-compose']
+        for conf in configs:
+            last_args.extend(['-f', conf])
+        last_args.extend(['up', '-d'])
+
+        print(f'Refreshing containers')
+        run(last_args)
+    else:
+        os.system(override)
+
+# Command definiton
+description = "handles volume mappings for local docker-compose."
+configStore = f'{os.environ.get("HOME")}/.config/dvol/config.ini'
+
+parser = argparse.ArgumentParser(description)
+parser.add_argument("-c", "--container", help = "Container name")
+parser.add_argument("-d", "--default", help = "Save these arguments as defaults", action = 'store_true')
+parser.add_argument("-g", "--git-restore", help = "Restore docker-compose from Git", action='store_true')
+parser.add_argument("-n", "--nuke", help = "Implies -r, destroy {root}/{service}_volumes", action='store_true')
+parser.add_argument("-o", "--override", help = "Command to restart containers")
+parser.add_argument("-p", "--print", help = "Show first docker-compose file path and exit", action='store_true')
+parser.add_argument("-r", "--root", help = "Root folder to use locally", default='/tmp')
+parser.add_argument("-s", "--service", help = "'service' from docker-compose")
+parser.add_argument("-u", "--update", help = "Remove local copy and re-sync from container", action='store_true')
+parser.add_argument("remote", help = "Remote folder to add/map.", nargs='?')
+args = parser.parse_args()
+
+# Config management
+config = ConfigParser()
+config.read(configStore)
+
+if args.container: config['default']['DOCKER_CONTAINER'] = args.container
+if args.override: config['default']['DOCKER_OVERRIDE'] = args.override
+if args.service: config['default']['DOCKER_SERVICE'] = args.service
+if args.root: config['default']['DOCKER_VOLUMES_ROOT'] = args.root
+
+if args.default:
+    with open(configStore, 'w') as configfile:
+        config.write(configfile)
+
+# Local variables / syntax sugar
+default = config['default']
+container = default['DOCKER_CONTAINER']
+override = default['DOCKER_OVERRIDE']
+root = default['DOCKER_VOLUMES_ROOT']
+service = default['DOCKER_SERVICE']
+folder = args.remote
+localRoot = f'{root}/{service}_volumes'
+localDir = f'{localRoot}{folder}'
+
+# Validation
+running = check_output(['docker', 'ps']).decode(sys.stdout.encoding)
+if container not in running:
+    print(f'It doesn\'t look like {container} is running... exiting')
+    quit()
+
+# All operations need to know working dir and configs
+inspect = check_output(["docker", "container", "inspect", container]).decode(sys.stdout.encoding)
+inspect = json.loads(inspect)
+workingDir = jq.compile('.[0].Config.Labels."com.docker.compose.project.working_dir"').input(inspect).first()
+configs = jq.compile('.[0].Config.Labels."com.docker.compose.project.config_files" | split(",")').input(inspect).first()
+# Convert all configs to absolute reference
+for idx, config in enumerate(configs):
+    configs[idx] = f'{workingDir}/{config.split("/")[-1]}'
+
+# We'll only be editing the first (or "Main") YAML file
+mainCompose = configs[0]
+
+# -p/--print just spits back the filename
+if args.print:
+    print(mainCompose)
+    quit()
+
+# -n/--nuke deletes the local volumes and implies -r/--restore
+if args.nuke:
+    print(f'Removing [31m{localRoot}[0m')
+    try:
+        rmtree(localRoot)
+    except:
+        print("'twas already gone.")
+
+# TODO: When first mapping/editing the YAML file, if the file isn't in a git repo, we need another way of protecting it
+# Ideas: Copy to /tmp, Copy to bkp, create Git repo
+if args.git_restore or args.nuke:
+    repo = Repo(path=f'{workingDir}', search_parent_directories=True)
+    top_level = repo.git.rev_parse("--show-toplevel")
+    print(f'Restoring [31m{mainCompose}[0m from [47m{top_level}[0m')
+    repo.index.checkout(mainCompose, force=True)
+    recreate()
+    quit()
+
+localDir = f'{root}/{service}_volumes{folder}'
+
+if os.path.isdir(localDir) and args.update:
+    print(f'Removing [47m{localDir}[0m. You should add a check to see if it is mapped before this, tho ')
+    rmtree(localDir)
+if not os.path.isdir(localDir):
+    os.makedirs(localDir)
+
+print(f'Copying [47m{folder}[0m from [47m{container}[0m to [47m{localDir}[0m')
+run(["docker", "cp", f'{container}:{folder}/.', localDir])
+
+print(f'Initializing Git repo at [47m{localDir}[0m')
+repo = Repo.init(localDir)
+repo.git.add(A=True)
+repo.index.commit("initial dvol call")
+
+print(f'Updating [47m{mainCompose}[0m')
+with open(mainCompose, 'r+') as file:
+    fullCompose = yaml.safe_load(file.read())
+    volumes = set(fullCompose['services'][service]['volumes'])
+    volumes.add(f'{localDir}:{folder}')
+    fullCompose['services'][service]['volumes'] = list(volumes)
+    file.seek(0)
+    yaml.dump(fullCompose, file)
+    file.truncate()
+
+recreate()
+
