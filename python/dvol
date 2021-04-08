@@ -1,169 +1,310 @@
 #!/usr/local/bin/python3
+# TODO: add arg to config to print current mappings
 
-import argparse, sys
-from configparser import ConfigParser
-import os
+import argparse
 import jq
 import json
+import os
+import sys
 import yaml
+
+from configparser import ConfigParser
+from git import Repo
 from shutil import rmtree, copy
 from subprocess import check_output, run
-from git import Repo
 
-def writeConfig (newAdd = ""):
-    with open(mainCompose, 'w') as file:
-        if newAdd: volumes.add(newAdd)
-        fullCompose['services'][service]['volumes'] = list(volumes)
-        yaml.dump(fullCompose, file)
+config_folder = f'{os.environ.get("HOME")}/.config/dvol'
+config_store = f'{config_folder}/config.ini'
 
-def recreate ():
-    if not override:
-        last_args = ['docker-compose']
+def f_folder (content): return f'[32;47m{content}[0m'
+
+def f_path (content): return f'[33;47m{content}[0m'
+
+def f_argument (content): return f'[34;47m{content}[0m'
+
+def f_command (content): return f'[35;47m{content}[0m'
+
+def read_override (project, service):
+    override_file = f'{config_folder}/{project}.yml'
+    if os.path.isfile(override_file):
+        with open(override_file, 'r') as file:
+            override_data = file.read()
+        override_data = yaml.safe_load(override_data)
+    else:
+        override_data = { 'services': {service: { 'volumes': []}}}
+    return (override_file, override_data)
+
+def write_override (override_file, override_data):
+    ensure_config_folder()
+    print(f'Updating {f_path(override_file)}')
+    with open(override_file, 'w') as file:
+        file.write(yaml.dump(override_data))
+
+def ensure_config_folder():
+    if not os.path.isdir(config_folder):
+        print(f'Creating {f_folder(config_folder)}')
+        os.makedirs(config_folder)
+
+def get_updated_profile (
+    profile = 'default',
+    container = None,
+    root = None,
+    execute = None,
+    git = '1',
+    save = False,
+    **kwargs
+):
+    config = ConfigParser()
+    config.read(config_store)
+    c_profile = config[profile] if config.has_section(profile) else {'root': '/tmp'}
+    e_prime = c_profile.get('execute', None)
+    """
+    If user is setting some things, but not execute AND there's an existing execute, they may have forgotten
+    there's one set. Confirm they want to keep it
+    """
+    if ((container == None and root == None) and (execute != None and not e_prime)):
+        print(f"There is a default --execute command saved:\n{f_command(e_prime)}")
+        if not input("Do you want to keep it? (y/n): ").lower().strip()[:1] == "y":
+            execute = ''
+
+    no_new = container == None and root == None and execute == None
+    if no_new and not os.path.isfile(config_store):
+        print(f'{f_path(config_store)} not found')
+        quit()
+
+    c_profile['container'] = container if  container != None else c_profile.get('container',  '')
+    c_profile['root']      = root      if  root      != None else c_profile.get('root',       '')
+    c_profile['execute']   = execute   if  execute   != None else c_profile.get('execute',    '')
+    c_profile['git']       = git       if  git       != None else c_profile.get('git',        '')
+
+    if save:
+        config[profile] = c_profile
+        ensure_config_folder()
+        with open(config_store, 'w') as configfile:
+            config.write(configfile)
+    return c_profile
+
+def write_config (**kwargs):
+    get_updated_profile(**kwargs, save = True)
+
+    print(f'{f_path(config_store)}')
+    quick_conf = open(config_store).read()
+    print(quick_conf)
+    quit()
+
+def get_compose_tags (container = None):
+    # Validation
+    running = check_output(['docker', 'ps']).decode(sys.stdout.encoding)
+    if container not in running:
+        print(f"It doesn't look like {f_argument(container)} is running... exiting")
+        quit()
+    inspect = check_output(['docker', 'container', 'inspect', container]).decode(sys.stdout.encoding)
+    inspect = json.loads(inspect)
+    labels = jq.compile('.[0].Config.Labels').input(inspect).first()
+    service = jq.compile(f'."com.docker.compose.service"').input(labels).first()
+
+    project_base = '"com.docker.compose.project'
+    working_dir = jq.compile(f'.{project_base}.working_dir\"').input(labels).first()
+    configs = jq.compile(f'.{project_base}.config_files" | split(",")').input(labels).first()
+    project = jq.compile(f'.{project_base}"').input(labels).first()
+    # Convert all configs to absolute reference
+    for idx, config in enumerate(configs):
+        if config[0] == '/': continue
+        configs[idx] = f'{working_dir}/{config.split("/")[-1]}'
+    return (working_dir, configs, project, service)
+
+def get_local_path (local_path, root, container, remote = ''):
+    return local_path or f'{root}/{container}_volumes{remote}'
+
+def add_it_meow (remote, force = False, solution = None, local_path = '', **kwargs):
+    # todo: make parsearges not send this as a list
+    remote = remote[0]
+    profile = get_updated_profile(**kwargs)
+    # returns a dict with non-guaranteed  order due to reading a config file with non-guaranteed user modifications
+    execute, container, root = profile['execute'], profile['container'], profile['root']
+    # returns a defined-ordered tuple
+    working_dir, configs, project, service = get_compose_tags(container)
+    if not remote:
+        print("Can't add what you don't ask for")
+        quit()
+    local_path = get_local_path(local_path, root, container, remote)
+    # returns a defined-ordered tuple
+    override_file, override_data = read_override(project, service)
+    configs = set(configs)
+    configs.add(override_file)
+    configs = list(configs)
+    # configs = list(set(configs).add(override_file))
+
+    for config in configs: #uses configs, service, &recreate:execute, working_dir, project
+        if not os.path.isfile(config):
+            continue
+        with open(config, 'r') as file:
+            full = yaml.safe_load(file.read())
+            volumes = full['services'].get(service, {}).get('volumes', [])
+            for volume in volumes:
+                segments = volume.split(':')
+                if len(segments) != 2:
+                    print("Volume does not have 2 ':' characters. I r confused")
+                    quit()
+                existing_local, existing_remote = segments
+                if existing_remote == remote:
+                    if config != override_file:
+                        print(f'[97;41mMapping to [96m{remote}[97m found in [96m{config}[97m. Aborting[0m')
+                        quit()
+                    if existing_local != local_path:
+                        print(f'Remote location {f_path(remote)} is already mapped to {f_folder(existing_local)}.')
+                        print(f'dvol intended to map it to {f_folder(local_path)}. What would you like to do?')
+                        if solution == None:
+                            solution = input('[u]se existing\n[d]elete existing\n[i]gnore existing\n[a]bort\n:')
+                        sol = solution[0].lower()
+                        if sol == 'd':
+                            print(f'Deleting {f_folder(existing_local)}')
+                            rmtree(existing_local)
+                        elif sol == 'u':
+                            local_path = existing_local
+                        elif sol != 'i':
+                            quit()
+                        print(f'Removing {f_argument(volume)} mapping, then refreshing containers.')
+                        override_data['services'][service]['volumes'].remove(volume)
+                        write_override(override_file, override_data)
+                        recreate(working_dir, configs, project, execute)
+                    else:
+                        print('Mapping already exists: removing to re-add') # TODO make this more useful
+                        override_data['services'][service]['volumes'].remove(volume)
+                        write_override(override_file, override_data)
+                        recreate(working_dir, configs, project, execute)
+
+    if os.path.isdir(local_path) and force:
+        rmtree(local_path)
+
+    if not os.path.isdir(local_path):
+        os.makedirs(local_path)
+        print(f'Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)}')
+        run(["docker", "cp", f'{container}:{remote}/.', local_path])
+        print(f'Initializing Git repo at {f_folder(local_path)}')
+        repo = Repo.init(local_path)
+        repo.git.add(A=True)
+        repo.index.commit("initial dvol call")
+    else:
+        print(f'Not Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)} (exists)')
+        print(f'Run with {f_folder("--force")} if desired')
+
+    volume = f'{local_path}:{remote}'
+    override_data['services'][service] = override_data['services'].get(service, { 'volumes': [] })
+    override_data['services'][service]['volumes'].append(volume)
+
+    write_override(override_file, override_data)
+    recreate(working_dir, configs, project, execute)
+
+    # todo: help for create needs to mention backup file, always printing location of main compose
+    print(f_path(override_file))
+
+def remove (remote, files = False, all_mappings = None, local_path = '', **kwargs):
+    # todo: make parsearges not send this as a list
+    profile = get_updated_profile(**kwargs)
+    # returns a dict with non-guaranteed  order due to reading a config file with non-guaranteed user modifications
+    execute, container, root = profile['execute'], profile['container'], profile['root']
+    # returns a defined-ordered tuple
+    working_dir, configs, project, service = get_compose_tags(container)
+    print('configs', configs)
+    override_file, override_data = read_override(project, service)
+    print('of', override_file)
+
+    if all_mappings:
+        target = get_local_path(local_path, root, container)
+        print(f'target is {target}')
+    else:
+        volumes = override_data['services'][service]['volumes']
+        # should throw StopIteration if not found
+        volume = next(volume for volume in volumes if volume.endswith(f':{remote}'))
+        target = volume.split(':')[0]
+        volumes.remove(volume)
+
+    if all_mappings or not len(volumes):
+        configs.remove(override_file)
+        os.remove(override_file)
+    else:
+        override_data['services'][service]['volumes'] = volumes
+        write_override(override_file, override_data)
+
+    recreate(working_dir, configs, project, execute)
+
+    if files:
+        rmtree(target)
+
+def recreate (working_dir, configs, project, execute = None):
+    """
+    Runs a command intended to tell docker-compose to check the services listed in the configs for changes.
+
+    By default, this command is
+        docker-compose -f /path/to/docker-compose.yml -f /path/to/other/.yml... up -d
+    However, if there is a custom command you prefer to run you can override the default with the --execute arg
+    """
+    if not execute:
+        run_args = ['docker-compose', '--project-name', project, '--project-directory', working_dir]
         for conf in configs:
-            last_args.extend(['-f', conf])
-        last_args.extend(['up', '-d'])
+            run_args.extend(['-f', conf])
+        run_args.extend(['up', '-d'])
 
-        print(f'Refreshing containers')
-        run(last_args)
+        print('Refreshing containers')
+        run(run_args)
     else:
-        os.system(override)
+        print(f'Running {f_command(execute)}')
+        os.system(execute)
 
-# Command definiton
-description = "handles volume mappings for local docker-compose."
-configFolder = f'{os.environ.get("HOME")}/.config/dvol'
-configStore = f'{configFolder}/config.ini'
+######## Messages
+all_help = 'Remove all volume mappings. Combine with -f for the nuke.'
+container_help = f"Container name; use with {f_command('write')} to save default, or with {f_command('add')}/{f_command('remove')} to override"
+execute_help = f"Replace {f_command('docker-compose up -d')}; use with {f_command('write')} to save default, or with {f_command('add')}/{f_command('remove')} to override"
+files_help = 'Also remove local folder'
+force_help = 'Force re-copying remote folder contents, destroying the specified folder and any contents'
+git_help = "Control change tracking behavior"
+path_help = 'Override {root}{container}{remote} path logic and use provided folder'
+remote_add_help = 'Remote folder to add/map'
+remote_remove_help = 'Remote folder mapping to remove'
+root_help = f"Local root folder (/tmp); use with {f_command('write')} to save default, or with {f_command('add')}/{f_command('remove')} to override"
+solution_help = 'If remote volume is mapped to a different folder, should dvol [u]se, [d]elete or [i]gnore it'
 
-parser = argparse.ArgumentParser(description)
-parser.add_argument("-c", "--container", help = "Container name")
-parser.add_argument("-d", "--default", help = "Save these arguments as defaults", action = 'store_true')
-parser.add_argument("-e", "--echo", help = "Echo the current defaults", action = 'store_true')
-parser.add_argument("-f", "--file", help = "Print file path to main docker-compose YAML file", action = 'store_true')
-parser.add_argument("-l", "--local", help = "Local root folder", default='/tmp')
-parser.add_argument("-n", "--nuke", help = "Implies -g, destroy {root}/{service}_volumes", action = 'store_true')
-parser.add_argument("-o", "--override", help = "Command to restart containers")
-parser.add_argument("-r", "--restore", help = "Restore docker-compose from Git", action = 'store_true')
-parser.add_argument("-s", "--service", help = "'service' from docker-compose")
-parser.add_argument("-u", "--update", help = "Remove local copy and re-sync from container", action = 'store_true')
-parser.add_argument("remote", help = "Remote folder to add/map.", nargs='?')
-args = parser.parse_args()
+cmd_remove_desc = f'Remove volume map, leaving files unless {f_argument("--files")} given.'
+cmd_main_desc = "Manage docker-compose volume mappings easily!"
+cmd_add_help = "Add a new volume mapping, or update an existing one."
+cmd_add_desc = cmd_add_help + f"""
 
-# Config management
-config = ConfigParser()
-config.read(configStore)
+dvol will only alter its own compose file.
+If a mapping is found in another config for {f_argument('remote')}, dvol will abort.
+For new or {f_argument('--force')} remote folders, dvol will copy the contents to the default path:
+    {{root}}/{{container}}_volumes/{{remote}}
+or --path if provided, then initialize a new local git repository to make tracking changes easier.
+"""
+cmd_write_help = f"""Set default {f_argument("container")}, {f_argument("executed")}, and {f_argument("root")}.
+Always prints resulting config."""
+cmd_write_desc = cmd_write_help + """
+Pass in empty string to clear values"""
 
-if os.path.isfile(configStore):
-    # --config spits out the current config and exits
-    if args.echo:
-        quick_conf = open(configStore).read()
-        print(quick_conf)
-        quit()
-else:
-    if args.echo:
-        print("no config to print")
-        quit()
-    else:
-        os.makedirs(configFolder)
-        config['default'] = {}
+main = argparse.ArgumentParser(prog = 'dvol', description = cmd_main_desc)
+main.add_argument( "--container", "-c", help = container_help)
+main.add_argument( "--root", "-r", help = root_help)
+main.add_argument( "--execute", "-e", help = execute_help)
+main.add_argument( "--git", "-g", help = git_help, default = '1')
+subs = main.add_subparsers(title = 'subcommands')
 
-if args.container: config['default']['DOCKER_CONTAINER'] = args.container
-if not args.override == None: config['default']['DOCKER_OVERRIDE'] = args.override
-if args.service: config['default']['DOCKER_SERVICE'] = args.service
-if args.local: config['default']['DOCKER_VOLUMES_ROOT'] = args.local
+add_p = subs.add_parser('add', help = cmd_add_help, aliases = ['a'])
+add_p.set_defaults(func = add_it_meow)
+add_p.add_argument('--force', '-f', help = force_help, action = 'store_true')
+add_p.add_argument('--path', '-p', help = path_help, dest = 'local_path')
+add_p.add_argument('--solution', '-s', help = solution_help, choices = ['use', 'delete', 'ignore', 'u', 'd', 'i'])
+add_p.add_argument('remote', help = remote_add_help, nargs=1)
 
-if args.default:
-    with open(configStore, 'w') as configfile:
-        config.write(configfile)
+remove_p = subs.add_parser('remove', help = cmd_remove_desc, aliases = ['rm'])
+remove_p.set_defaults(func = remove)
+remove_p.add_argument('-f', '--files', help = files_help, action = 'store_true')
+remove_p.add_argument('-p', '--path', help = path_help, dest = 'local_path')
+all_or_something = remove_p.add_mutually_exclusive_group(required = True)
+all_or_something.add_argument('-a', '--all', help = all_help, action = 'store_true', dest = 'all_mappings')
+all_or_something.add_argument('remote', help = remote_remove_help, nargs = '?')
 
-# Local variables / syntax sugar
-default = config['default']
-container = default['DOCKER_CONTAINER']
-override = default['DOCKER_OVERRIDE']
-root = default['DOCKER_VOLUMES_ROOT']
-service = default['DOCKER_SERVICE']
-folder = args.remote
-localRoot = f'{root}/{service}_volumes'
-localDir = f'{localRoot}{folder}'
+write_p = subs.add_parser('write', help = cmd_write_help, description = cmd_write_desc, aliases = ['write'])
+write_p.set_defaults(func = write_config)
 
-# Validation
-running = check_output(['docker', 'ps']).decode(sys.stdout.encoding)
-if container not in running:
-    print(f'It doesn\'t look like {container} is running... exiting')
-    quit()
-
-# All operations need to know working dir and configs
-inspect = check_output(["docker", "container", "inspect", container]).decode(sys.stdout.encoding)
-inspect = json.loads(inspect)
-workingDir = jq.compile('.[0].Config.Labels."com.docker.compose.project.working_dir"').input(inspect).first()
-configs = jq.compile('.[0].Config.Labels."com.docker.compose.project.config_files" | split(",")').input(inspect).first()
-# Convert all configs to absolute reference
-for idx, config in enumerate(configs):
-    configs[idx] = f'{workingDir}/{config.split("/")[-1]}'
-
-# We'll only be editing the first (or "Main") YAML file
-mainCompose = configs[0]
-mainBackup = f'{mainCompose}.dvol'
-
-# -p/--print just spits back the filename
-if args.file:
-    print(mainCompose)
-    quit()
-
-# -n/--nuke deletes the local volumes and implies -r/--restore
-if args.nuke:
-    print(f'Removing [31m{localRoot}[0m')
-    try:
-        rmtree(localRoot)
-    except:
-        print("'twas already gone.")
-
-# Before the first time we map a volume we make a backup copy of the virgin config; time to put it back
-if args.restore or args.nuke:
-    print(f'Restoring [31m{mainCompose}[0m from [47m{mainCompose}.dvol[0m')
-    os.rename(mainBackup, mainCompose)
-    recreate()
-    quit()
-
-# The rest of the commands require a folder argument
-if not folder:
-    print(f'Most operations require a remote folder path; check --help for details')
-    quit()
-
-# Make a backup of the current mainConfig if not already there
-if not os.path.isfile(mainBackup):
-    print(f'Making backup file [31m{mainBackup}[0m')
-    copy(mainCompose, mainBackup)
-localDir = f'{root}/{container}_volumes{folder}'
-
-# Load current volumes
-with open(mainCompose, 'r+') as file:
-    fullCompose = yaml.safe_load(file.read())
-    volumes = set(fullCompose['services'][service]['volumes'])
-
-# -u/--update will destroy the existing folder if it is there with the intent of pulling down a fresh remote copy
-# This may require an extra continer restart
-if os.path.isdir(localDir) and args.update:
-    for volume in volumes:
-        if localDir in volume:
-            print(f'Removing [47m{localDir}[0m mapping, then refreshing containers.')
-            volumes.remove(volume)
-            writeConfig()
-            recreate()
-            break
-    print(f'Removing [47m{localDir}[0m.')
-    rmtree(localDir)
-if not os.path.isdir(localDir):
-    os.makedirs(localDir)
-    print(f'Copying [47m{folder}[0m from [47m{container}[0m to [47m{localDir}[0m')
-    run(["docker", "cp", f'{container}:{folder}/.', localDir])
-    print(f'Initializing Git repo at [47m{localDir}[0m')
-    repo = Repo.init(localDir)
-    repo.git.add(A=True)
-    repo.index.commit("initial dvol call")
-else:
-    print(f'Not Copying [47m{folder}[0m from [47m{container}[0m to [47m{localDir}[0m; Run with --update if desired')
-
-
-print(f'Updating [47m{mainCompose}[0m')
-writeConfig(f'{localDir}:{folder}')
-recreate()
-
+args = main.parse_args()
+args.func(**vars(args))
