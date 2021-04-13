@@ -77,7 +77,6 @@ def get_updated_profile (
     execute   = execute     if  execute   != None else c_profile.get('execute',    '')
     # Questionable choice: store setting as 'use_git', defaults to 'True', optional flag is 'no-git'
     use_git   = False       if no_git             else c_profile.get('use_git',    'True') == 'True'
-    print(f'use_git is {use_git} because no-git was {no_git} and existing was {c_profile.get("use_git", "not set")}')
 
     if save:
         c_profile['container'] = container
@@ -138,6 +137,7 @@ def get_config_volume_map (service, configs = []):
 def add_it_meow (remote, force = False, solution = None, local_path = '', **kwargs):
     # todo: make parsearges not send this as a list
     remote = remote[0]
+    if not len(remote) or remote[0] != '/': remote = '/' + remote
     container, root, execute, use_git = get_updated_profile(**kwargs)
     working_dir, configs, project, service = get_compose_tags(container)
     if not remote:
@@ -190,11 +190,13 @@ def add_it_meow (remote, force = False, solution = None, local_path = '', **kwar
                         else:
                             quit()
 
+    if volume:
+        override_data['services'][service]['volumes'].remove(volume)
+        write_override(override_file, override_data)
+
     if os.path.isdir(local_path) and force:
         if volume:
-            print(f'Removing {f_argument(volume)} mapping, then refreshing containers to synch files')
-            override_data['services'][service]['volumes'].remove(volume)
-            write_override(override_file, override_data)
+            print('Refreshing containers to synch files')
             recreate(working_dir, configs, project, execute)
         print(f'Deleting {f_folder(local_path)}')
         rmtree(local_path)
@@ -212,7 +214,7 @@ def add_it_meow (remote, force = False, solution = None, local_path = '', **kwar
         print(f'Not Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)} (exists)')
         print(f'Run with {f_folder("--force")} if desired')
 
-    volume = f'{local_path}:{remote}'
+    volume = volume or f'{local_path}:{remote}'
     override_data['services'][service] = override_data['services'].get(service, { 'volumes': [] })
     override_data['services'][service]['volumes'].append(volume)
 
@@ -222,14 +224,17 @@ def add_it_meow (remote, force = False, solution = None, local_path = '', **kwar
     # todo: help for create needs to mention backup file, always printing location of main compose
     print(f_path(override_file))
 
-def remove (remote, remove_files = False, all_mappings = None, local_path = '', **kwargs):
-    container, root, execute = get_updated_profile(**kwargs)
+def remove (remote = '', remove_files = False, all_mappings = None, local_path = '', **kwargs):
+    if not len(remote) or remote[0] != '/': remote = '/' + remote
+    container, root, execute, *rest = get_updated_profile(**kwargs)
     working_dir, configs, project, service = get_compose_tags(container)
     override_file, override_data = read_override(project, service)
     volumes = override_data['services'][service]['volumes']
+    local_path = get_local_path(local_path, root, container, remote or '')
 
     if all_mappings:
         volumes = []
+        target = local_path
     else:
         # should throw StopIteration if not found
         volume = next(volume for volume in volumes if volume.endswith(f':{remote}'))
@@ -237,13 +242,15 @@ def remove (remote, remove_files = False, all_mappings = None, local_path = '', 
         volumes.remove(volume)
 
     if not len(volumes):
-        configs.remove(override_file)
+        override_file in configs and configs.remove(override_file)
         del override_data['services'][service]
         if not len(override_data['services']):
             os.remove(override_file)
+        else:
+            write_override(override_file, override_data)
 
     if remove_files:
-        print(f'Delting {target}')
+        print(f'Deleting {target}')
         rmtree(target)
     else:
         print(f'Leaving {target} in-place: use --files to delete.')
@@ -251,7 +258,7 @@ def remove (remote, remove_files = False, all_mappings = None, local_path = '', 
     recreate(working_dir, configs, project, execute)
 
 def get_volumes (**kwargs):
-    container = get_updated_profile(**kwargs)
+    container, *rest = get_updated_profile(**kwargs)
     _, configs, _, service = get_compose_tags(container)
     volumes = get_config_volume_map(service, configs)
     for file_name in volumes:
@@ -335,7 +342,7 @@ remove_p.add_argument('-f', '--files', help = files_help, dest = 'remove_files',
 remove_p.add_argument('-p', '--path', help = path_help, dest = 'local_path')
 all_or_something = remove_p.add_mutually_exclusive_group(required = True)
 all_or_something.add_argument('-a', '--all', help = all_help, action = 'store_true', dest = 'all_mappings')
-all_or_something.add_argument('remote', help = remote_remove_help, nargs = '?')
+all_or_something.add_argument('remote', help = remote_remove_help, default = '',  nargs = '?')
 
 get_volumes_p = subs.add_parser('get', help = cmd_get_volumes_desc)
 get_volumes_p.set_defaults(func = get_volumes)
