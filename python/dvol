@@ -1,5 +1,7 @@
 #!/usr/local/bin/python3
-# TODO: add arg to config to print current mappings
+# TODO: when `get` is called, always show override, but mark as disabled if container isn't curently using it
+# TODO: when config set with -p but no other params, clear it?
+# TODO: when removing, should loop through existing mappings, delete those folders, then nuke the root/project folder
 
 import argparse
 import jq
@@ -244,10 +246,11 @@ def remove (remote = '', remove_files = False, all_mappings = None, local_path =
     if not len(volumes):
         override_file in configs and configs.remove(override_file)
         del override_data['services'][service]
-        if not len(override_data['services']):
-            os.remove(override_file)
-        else:
-            write_override(override_file, override_data)
+
+    if not len(override_data['services']):
+        os.remove(override_file)
+    else:
+        write_override(override_file, override_data)
 
     if remove_files:
         print(f'Deleting {target}')
