@@ -170,8 +170,6 @@ def get_mounts_as_volumes (container):
 
 def recreate_docker (container, volumes, remove = None, add = None):
     current = []
-    import ipdb
-    ipdb.set_trace()
     if remove:
         for volume in volumes:
             if remove not in volume:
@@ -238,8 +236,8 @@ def add_docker (remote, force = False, solution = None, local_path = '', **kwarg
 def add_compose (remote, force = False, solution = None, local_path = '', **kwargs):
     container, root, execute, use_git = get_updated_profile(**kwargs)
     working_dir, configs, project, service = get_compose_tags(container)
-
     override_file, override_data = read_override(project, service)
+
     configs = set(configs)
     configs.add(override_file)
     configs = list(configs)
@@ -303,22 +301,57 @@ def add_compose (remote, force = False, solution = None, local_path = '', **kwar
     # todo: help for create needs to mention backup file, always printing location of main compose
     print(f_path(override_file))
 
-def remove (remote = '', remove_files = False, all_mappings = None, local_path = '', **kwargs):
-    if not len(remote) or remote[0] != '/': remote = '/' + remote
-    container, root, execute, *rest = get_updated_profile(**kwargs)
-    working_dir, configs, project, service = get_compose_tags(container)
-    override_file, override_data = read_override(project, service)
-    volumes = override_data['services'][service]['volumes']
-    local_path = get_local_path(local_path, root, container, remote or '')
+def determine_remove (**kwargs):
+    container, *rest = get_updated_profile(**kwargs)
+    info, *rest = get_compose_tags(container)
 
+    if info:
+        remove_compose(**kwargs)
+    else:
+        remove_docker(**kwargs)
+
+def remove_docker (**kwargs):
+    container, root, execute, *rest = get_updated_profile(**kwargs)
+    volumes = get_mounts_as_volumes(container)
+    volumes = remove_process(volumes = volumes, **kwargs)
+    """
+    import ipdb
+    ipdb.set_trace()
+    """
+    recreate_docker(container ,volumes)
+
+def remove_process (*, volumes, remote = '', local_path = '', remove_files = False, all_mappings = None, **kwargs):
+    container, root, *rest = get_updated_profile(**kwargs)
+    remote = '' if all_mappings else '/' + remote if not len(remote) or remote[0] != '/' else remote
+    local_path = get_local_path(local_path, root, container, remote or '')
     if all_mappings:
         volumes = []
         target = local_path
     else:
-        # should throw StopIteration if not found
         volume = next(volume for volume in volumes if volume.endswith(f':{remote}'))
         target = volume.split(':')[0]
         volumes.remove(volume)
+
+    if remove_files:
+        if not len(volumes):
+            container_root = get_local_path(None, root, container)
+            print(f'Last volume removed - Deleting {f_folder(container_root)}')
+            rmtree(container_root)
+        else:
+            print(f'Deleting {f_folder(target)}')
+            rmtree(target)
+    else:
+        print(f'Leaving {f_folder(target)} in-place: use --files to delete.')
+
+    return volumes
+
+def remove_compose (**kwargs):
+    container, root, execute, *rest = get_updated_profile(**kwargs)
+    working_dir, configs, project, service = get_compose_tags(container)
+    override_file, override_data = read_override(project, service)
+    volumes = override_data['services'][service]['volumes']
+
+    volumes = remove_process(volumes, **kwargs)
 
     if not len(volumes):
         override_file in configs and configs.remove(override_file)
@@ -328,12 +361,6 @@ def remove (remote = '', remove_files = False, all_mappings = None, local_path =
         os.remove(override_file)
     else:
         write_override(override_file, override_data)
-
-    if remove_files:
-        print(f'Deleting {target}')
-        rmtree(target)
-    else:
-        print(f'Leaving {target} in-place: use --files to delete.')
 
     recreate(working_dir, configs, project, execute)
 
@@ -385,15 +412,21 @@ def print_volumes_compose (container, configs, project, service, **kwargs):
 def enable_dvol (**kwargs):
     container, root, execute, use_git = get_updated_profile(**kwargs)
     working_dir, configs, project, service = get_compose_tags(container)
+    if not configs:
+        print ("[31mEnable/Disable is meaningless without 'docker compose'[0m")
+        quit()
     override_file, override_data = read_override(project, service)
     configs = set(configs)
     configs.add(override_file)
     configs = list(configs)
     recreate(working_dir, configs, project, execute)
 
-def disable_dvol ():
+def disable_dvol (**kwargs):
     container, root, execute, use_git = get_updated_profile(**kwargs)
     working_dir, configs, project, service = get_compose_tags(container)
+    if not configs:
+        print ("[31mEnable/Disable is meaningless without 'docker compose'[0m")
+        quit()
     override_file, override_data = read_override(project, service)
     configs = set(configs)
     configs.remove(override_file)
@@ -478,7 +511,7 @@ add_p.add_argument('--solution', '-s', help = solution_help, choices = ['use', '
 add_p.add_argument('remote', help = remote_add_help, nargs=1)
 
 remove_p = subs.add_parser('remove', help = cmd_remove_desc, aliases = ['rm'])
-remove_p.set_defaults(func = remove)
+remove_p.set_defaults(func = determine_remove)
 remove_p.add_argument('-f', '--files', help = files_help, dest = 'remove_files', action = 'store_true')
 remove_p.add_argument('-p', '--path', help = path_help, dest = 'local_path')
 all_or_something = remove_p.add_mutually_exclusive_group(required = True)
