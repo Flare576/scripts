@@ -15,6 +15,15 @@ from one account to the other, I setup multiple certificates tied to different s
 check out my [DotFiles](https://github.com/Flare576/dotfiles) project). This script allows me to easily check out
 projects using the different certs.
 
+## dvol (/python)
+
+D[oocker] Vol[ume] management can be a pain, especially when you want to attach one *and* copy the
+files out of the remote machine first. That's why
+```
+dvol --container my_container add /map/drive/address
+```
+Is so easy!
+
 ## gac (/js)
 Git Add/Commit (gac) is a command I started with as a small alias and evolved into what it is now, a slick script that
 simplifies my git interactions. My most common usages are `gac -a`, `gac -f my.js src/firstSet.js tests/ofChanges` and,
@@ -23,6 +32,9 @@ just plain `gac`.
 ## gmb (/shell)
 G[ei]t Master Branch (gmb) is a really simple script that basically amounts to a forceful `git checkout $branch;git pull`,
 for when I just want to start over :)
+
+## monitorjobs (/shell)
+Uses aws-cli and local config to monitor AWS CodePipeline jobs.
 
 ## mmb (/shell)
 Merge Master Branch (mmb) is a really script that basically updates my current branch with changes in "master".
