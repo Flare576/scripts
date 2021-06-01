@@ -1,0 +1,76 @@
+#!/bin/zsh
+
+# Requirements: aws-cli, jq, ZSH
+
+# Note - this script uses ZSH functions to display information (print)
+# To work in other shells, you'll need to replace them
+
+# JQ partials
+
+getFailedAction='[.actionStates[] | select( .latestExecution.status != "Succeeded")][0]'
+printActionStatus='[35m\(.actionName)[0m \(.latestExecution.status)'
+checkAndPassLastChange='.latestExecution.lastStatusChange then .latestExecution.lastStatusChange'
+awsTimeSinceSecOffsets='split(".")| { offset: (.[1][6:9] | tonumber), sec: (.[0] + "Z" | fromdate) }'
+offsetAdjust='now - .sec + ((.offset + 1) * 60 * 60)'
+formatMinHour='(. / 60 | floor | tostring) + "m" + (. % 60 | tostring) + "s"'
+
+# Compose filter chain
+fullJQ=$(echo '[.stageStates[] | select( .latestExecution.status != "Succeeded")][0] | try ' $getFailedAction \
+      ' |"' $printActionStatus ' (\( if ' $checkAndPassLastChange \
+        ' | ' $awsTimeSinceSecOffsets ' | ' $offsetAdjust ' | ' $formatMinHour \
+      ' else ""' \
+      ' end))"')
+
+# Get job states
+awsjobs () {
+  for job in "${AWS_JOBS_LIST[@]}"
+  do
+    latestNonSuccessful=$( aws codepipeline get-pipeline-state \
+      --profile="${AWS_PIPELINE_PROFILE}" \
+      --name="${job}" --output=json \
+      | jq $fullJQ
+    )
+    latestNonSuccessful="${latestNonSuccessful%\"}"
+    latestNonSuccessful="${latestNonSuccessful#\"}"
+    if [ -z "$latestNonSuccessful" ]; then
+      print -nP -- "✅ $BG[040]$FG[000]$job[0m"
+    elif [[ "$latestNonSuccessful" == *"Failed"* ]]; then
+      print -nP -- "❌ $BG[009]$FG[000]$job[0m: $latestNonSuccessful"
+    else
+      print -nP -- "⛴  $BG[226]$FG[000]$job[0m: $latestNonSuccessful"
+    fi
+    tput el
+    print
+  done
+}
+
+usage="$(basename "$0") uses aws-cli to monitor the codepipeline status of \$AWS_JOBS_LIST. Requires that \
+\$AWS_PIPELINE_PROFILE also be set and for the current user to have a working .aws/config with active session.
+
+No parameters"
+
+if [ -z "$AWS_JOBS_LIST" ] || [ ${#AWS_JOBS_LIST[@]} -eq 0 ]; then
+  echo "No jobs listed in AWS_JOBS_LIST"
+  echo "$usage"
+  exit
+fi
+if [ -z "$AWS_PIPELINE_PROFILE" ]; then
+  echo "AWS_PIPELINE_PROFILE not set"
+  echo "$usage"
+  exit
+fi
+
+if [[ "$1" == *"-h"* ]]; then
+  echo "$usage"
+  exit
+fi
+
+clear
+while true;
+do
+  tput sc
+  awsjobs
+  tput cd
+  sleep 20
+  tput rc
+done

@@ -14,7 +14,7 @@ import yaml
 from configparser import ConfigParser
 from git import Repo
 from shutil import rmtree, copy
-from subprocess import check_output, run
+from subprocess import check_output, run, DEVNULL
 
 config_folder = f'{os.environ.get("HOME")}/.config/dvol'
 config_store = f'{config_folder}/config.ini'
@@ -110,6 +110,8 @@ def get_compose_tags (container = None):
     inspect = check_output(['docker', 'container', 'inspect', container]).decode(sys.stdout.encoding)
     inspect = json.loads(inspect)
     labels = jq.compile('.[0].Config.Labels').input(inspect).first()
+    if not labels:
+        return (None, None, None, None)
     service = jq.compile(f'."com.docker.compose.service"').input(labels).first()
 
     project_base = '"com.docker.compose.project'
@@ -136,17 +138,107 @@ def get_config_volume_map (service, configs = []):
             volume_map[config] = volumes
     return volume_map
 
-
-def add_it_meow (remote, force = False, solution = None, local_path = '', **kwargs):
+def determine_add (remote, local_path = '', **kwargs):
     # todo: make parsearges not send this as a list
     remote = remote[0]
-    if not len(remote) or remote[0] != '/': remote = '/' + remote
-    container, root, execute, use_git = get_updated_profile(**kwargs)
-    working_dir, configs, project, service = get_compose_tags(container)
     if not remote:
         print("Can't add what you don't ask for")
         quit()
+    if not len(remote) or remote[0] != '/': remote = '/' + remote
+    container, root, *rest = get_updated_profile(**kwargs)
     local_path = get_local_path(local_path, root, container, remote)
+
+
+    info, *rest = get_compose_tags(container)
+    if info:
+        add_compose(remote, **kwargs, local_path = local_path)
+    else:
+        add_docker(remote, **kwargs, local_path = local_path)
+
+def get_mounts_as_volumes (container):
+    try:
+        inspect = check_output(['docker', 'container', 'inspect', container]).decode(sys.stdout.encoding)
+        inspect = json.loads(inspect)
+        mounts = jq.compile('.[0].Mounts').input(inspect).first()
+        return list(set(map(
+            lambda m: f"{m['Source']}:{m['Destination']}",
+            mounts,
+        )))
+    except:
+        print(f"It doesn't look like {f_argument(container)} is running... exiting")
+        quit()
+
+def recreate_docker (container, volumes, remove = None, add = None):
+    current = []
+    import ipdb
+    ipdb.set_trace()
+    if remove:
+        for volume in volumes:
+            if remove not in volume:
+                current.append(volume)
+    else:
+        currrent = volumes or []
+
+    if add:
+        current.append(add)
+        current = (list(set(current)))
+
+    dvol_image = f'dvol-{container}'
+    run(['docker', 'commit', '-a', 'dvol', '-m', 'Temp for dvol', container, dvol_image], stdout=DEVNULL)
+    run(['docker', 'rm', '-f', container], stdout=DEVNULL)
+    vols = []
+    for volume in current:
+        vols.extend(['-v', volume])
+    run(['docker', 'run', *vols, '--name', container, '-td', dvol_image], stdout=DEVNULL)
+
+def sync (*, container, remote, local_path, force, use_git, recreate_pair):
+    (recreate_fn, recreate_args) = recreate_pair
+    if force and os.path.isdir(local_path):
+        print(f'Deleting {f_folder(local_path)}')
+        rmtree(local_path)
+
+    remove = None
+    volumes = get_mounts_as_volumes(container)
+    for volume in volumes:
+        if remote in volume:
+            remove = volume
+            break
+
+    if remove:
+        print('Refreshing container to synch files')
+        recreate_fn(*recreate_args, remove = remove)
+
+    if not os.path.isdir(local_path):
+        os.makedirs(local_path)
+        print(f'Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)}')
+        run(["docker", "cp", f'{container}:{remote}/.', local_path], stdout=DEVNULL)
+        if use_git:
+            print(f'Initializing Git repo at {f_folder(local_path)}')
+            repo = Repo.init(local_path)
+            repo.git.add(A=True)
+            repo.index.commit("initial dvol call")
+    else:
+        print(f'Not Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)} (exists)')
+        print(f'Run with {f_folder("--force")} if desired')
+
+    recreate_fn(*recreate_args, add = f'{local_path}:{remote}')
+
+def add_docker (remote, force = False, solution = None, local_path = '', **kwargs):
+    container, root, execute, use_git = get_updated_profile(**kwargs)
+    volumes = get_mounts_as_volumes(container)
+    sync(
+        container = container,
+        remote = remote,
+        local_path = local_path,
+        force = force,
+        use_git = use_git,
+        recreate_pair = (recreate_docker, (container, volumes)),
+    )
+
+def add_compose (remote, force = False, solution = None, local_path = '', **kwargs):
+    container, root, execute, use_git = get_updated_profile(**kwargs)
+    working_dir, configs, project, service = get_compose_tags(container)
+
     override_file, override_data = read_override(project, service)
     configs = set(configs)
     configs.add(override_file)
@@ -193,29 +285,13 @@ def add_it_meow (remote, force = False, solution = None, local_path = '', **kwar
                         else:
                             quit()
 
-    if volume:
-        override_data['services'][service]['volumes'].remove(volume)
-        write_override(override_file, override_data)
-
-    if os.path.isdir(local_path) and force:
-        if volume:
-            print('Refreshing containers to synch files')
-            recreate(working_dir, configs, project, execute)
-        print(f'Deleting {f_folder(local_path)}')
-        rmtree(local_path)
-
-    if not os.path.isdir(local_path):
-        os.makedirs(local_path)
-        print(f'Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)}')
-        run(["docker", "cp", f'{container}:{remote}/.', local_path])
-        if use_git:
-            print(f'Initializing Git repo at {f_folder(local_path)}')
-            repo = Repo.init(local_path)
-            repo.git.add(A=True)
-            repo.index.commit("initial dvol call")
-    else:
-        print(f'Not Copying {f_argument(remote)} from {f_argument(container)} to {f_folder(local_path)} (exists)')
-        print(f'Run with {f_folder("--force")} if desired')
+    sync(
+        container = container,
+        remote = remote,
+        local_path = local_path,
+        force = force,
+        recreate_pair = (recreate, (working_dir, configs, project, execute, service))
+    )
 
     volume = volume or f'{local_path}:{remote}'
     override_data['services'][service] = override_data['services'].get(service, { 'volumes': [] })
@@ -261,9 +337,19 @@ def remove (remote = '', remove_files = False, all_mappings = None, local_path =
 
     recreate(working_dir, configs, project, execute)
 
-def get_volumes (**kwargs):
+def print_volumes (**kwargs):
     container, *rest = get_updated_profile(**kwargs)
     _, configs, project, service = get_compose_tags(container)
+    if configs:
+        print_volumes_compose (container, configs, project, service, **kwargs)
+    else:
+        print_volumes_docker (container)
+
+def print_volumes_docker (container):
+    for volume in get_mounts_as_volumes(container):
+        print(f'  - {volume}')
+
+def print_volumes_compose (container, configs, project, service, **kwargs):
     override_file, override_data = read_override(project, service)
     volumes = get_config_volume_map(service, configs)
     in_use = False
@@ -296,13 +382,25 @@ def get_volumes (**kwargs):
                 for vol in override_data['services'][service]['volumes']:
                     print(f'  - {vol}')
 
-def enable_dvol ():
-    pass
+def enable_dvol (**kwargs):
+    container, root, execute, use_git = get_updated_profile(**kwargs)
+    working_dir, configs, project, service = get_compose_tags(container)
+    override_file, override_data = read_override(project, service)
+    configs = set(configs)
+    configs.add(override_file)
+    configs = list(configs)
+    recreate(working_dir, configs, project, execute)
 
 def disable_dvol ():
-    pass
+    container, root, execute, use_git = get_updated_profile(**kwargs)
+    working_dir, configs, project, service = get_compose_tags(container)
+    override_file, override_data = read_override(project, service)
+    configs = set(configs)
+    configs.remove(override_file)
+    configs = list(configs)
+    recreate(working_dir, configs, project, execute)
 
-def recreate (working_dir, configs, project, execute = None):
+def recreate (working_dir, configs, project, execute, service, *, add = None, remove = None):
     """
     Runs a command intended to tell docker-compose to check the services listed in the configs for changes.
 
@@ -310,6 +408,17 @@ def recreate (working_dir, configs, project, execute = None):
         docker-compose -f /path/to/docker-compose.yml -f /path/to/other/.yml... up -d
     However, if there is a custom command you prefer to run you can override the default with the --execute arg
     """
+
+    override_file, override_data = read_override(project, service)
+    if add:
+        override_data['services'][service]['volumes'].append(add)
+        write_override(override_file, override_data)
+
+    if remove:
+        # TODO: might need to change this to just check destination
+        override_data['services'][service]['volumes'].remove(remove)
+        write_override(override_file, override_data)
+
     if not execute:
         run_args = ['docker-compose', '--project-name', project, '--project-directory', working_dir]
         for conf in configs:
@@ -362,7 +471,7 @@ main.add_argument( "--profile", "-p", help = profile_help, default = 'default')
 subs = main.add_subparsers(title = 'subcommands')
 
 add_p = subs.add_parser('add', help = cmd_add_help, aliases = ['a'])
-add_p.set_defaults(func = add_it_meow)
+add_p.set_defaults(func = determine_add)
 add_p.add_argument('--force', '-f', help = force_help, action = 'store_true')
 add_p.add_argument('--path', '-p', help = path_help, dest = 'local_path')
 add_p.add_argument('--solution', '-s', help = solution_help, choices = ['use', 'delete', 'ignore', 'u', 'd', 'i'])
@@ -377,7 +486,7 @@ all_or_something.add_argument('-a', '--all', help = all_help, action = 'store_tr
 all_or_something.add_argument('remote', help = remote_remove_help, default = '',  nargs = '?')
 
 get_volumes_p = subs.add_parser('get', help = cmd_get_volumes_desc)
-get_volumes_p.set_defaults(func = get_volumes)
+get_volumes_p.set_defaults(func = print_volumes)
 
 enable_dvol_p = subs.add_parser('enable', help = 'adds dvol override without adding new mappings')
 enable_dvol_p.set_defaults(func = enable_dvol)
@@ -392,5 +501,6 @@ if __name__ == '__main__':
     try:
         args = main.parse_args()
         args.func(**vars(args))
-    except:
+    except Exception as uh_oh:
+        print("Error: ", uh_oh)
         main.parse_args(['--help'])
