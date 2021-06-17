@@ -17,9 +17,8 @@ const argv = require('yargs')
   .option( 'updateOnly', { alias: 'u', type: 'boolean', description: 'Flag to ignore untracked files' })
   .example( 'gac', 'Adds all files/subfolder files, then opens a verbose commit' )
   .example( 'gac -b new-stuff', 'Switch (and create if necessary) to `new-stuff` branch, add all files/subfolder files, then open verbose commit' )
-  .example( 'gac -j', 'Adds all files/subfolder files, then opens a verbose commit, then perfoms npm version bump' )
   .example( 'gac -a', 'Adds all files/subfolder files, then opens the LAST commit in ammend/verbose' )
-  .example( 'gac -ua', 'Adds untracked files/subfolder files, then opens the LAST commit in amment/verbose' )
+  .example( 'gac -ua', 'Adds TRACKED files/subfolder files, then opens the LAST commit in amment/verbose' )
   .example( 'gac -f myFile', 'Adds `myFile` to stage, then opens verbose commit' )
   .example( 'gac -nf myFile', 'Adds `myFile` to stage, skips verification, then opens verbose commit' )
   .example( 'gac -sp', 'Only pushes to origin' )
@@ -27,7 +26,6 @@ const argv = require('yargs')
   .example( 'gac -a -f myFile', 'Removes all files from last commit, adds only myFile, opens new commit with prior ' +
     'message in amend mode' )
   .argv;
-const inquirer = require('inquirer');
 const {execSync, spawn} = require('child_process');
 
 (async () => {
@@ -39,6 +37,7 @@ const {execSync, spawn} = require('child_process');
     // if an Amend commit is being done with a file listing, need to be sure we're getting the new listing
     if (customFileAmendFlag) {
       execSync(`git reset --soft HEAD^`, { encoding: 'utf8' });
+      execSync(`git restore --staged .`, { encoding: 'utf8' });
     }
 
     let files = '.';
