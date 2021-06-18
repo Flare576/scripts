@@ -88,7 +88,7 @@ def add_compose (remote, force = False, solution = None, local_path = '', **kwar
                         else:
                             quit()
                     elif not force: # mapping exists, matches what we'd create
-                        print(f'Mapping exists, existing')
+                        print(f'Mapping exists, exiting')
                         quit()
     sync(
         container = container,

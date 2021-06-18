@@ -167,7 +167,7 @@ def enable_dvol (**kwargs):
     configs = set(configs)
     configs.add(override_file)
     configs = list(configs)
-    recreate(working_dir, configs, project, execute)
+    recreate_compose(working_dir, configs, project, execute, service)
 
 def disable_dvol (**kwargs):
     container, root, execute, use_git = get_updated_profile(**kwargs)
@@ -179,4 +179,4 @@ def disable_dvol (**kwargs):
     configs = set(configs)
     configs.remove(override_file)
     configs = list(configs)
-    recreate(working_dir, configs, project, execute)
+    recreate_compose(working_dir, configs, project, execute, service)
