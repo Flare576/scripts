@@ -1,4 +1,5 @@
 #!/bin/sh
+# 7/29/2021 note: maybe leverage vroom or another config file to make "main" branch a project default instead of a profile-level override
 usage="$(basename "$0") Resets or stashes working branch, switches to either master or provided branch, and fetches. \
 If stashed, pop stash.
   -d Reset before switching branches"
@@ -14,8 +15,8 @@ while getopts ':hd' option; do
 done
 shift $((OPTIND -1))
 
-current=$(git branch | grep \* | cut -d ' ' -f2)
-changes=$(git diff HEAD)
+changes="$(git diff HEAD)"
+echo "ha $changes"
 BRANCH=master
 original=$(git branch | grep \* | cut -d ' ' -f2)
 if [ -n "$MASTER_OVERRIDE" ] ; then

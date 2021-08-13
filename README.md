@@ -1,5 +1,9 @@
 # Flare576's Scripts
 
+> Note:  
+> Many of the scripts that used to live here have been split into their own repos, served
+> with [homebrew](https://brew.sh/) via [my tap](https://github.com/flare576/homebrew-scripts).
+
 It's important to know how your tools work, but sometimes (afterward), you just want to get things done _quickly_.
 That's where scripts come in! Here is a brief description of what you can expect from each of the scripts; full
 descriptions and usage details can be found in the `-h` help of each!
@@ -8,33 +12,9 @@ descriptions and usage details can be found in the `-h` help of each!
 
 Sometimes when working with Docker and Kubernetes, you end up with pods that just don't die. ClearKube kills them. ded.
 
-## clientClone (/shell)
-
-Some of my clients require that I have a separate gitHub account for their repositories. To make it easier to switch
-from one account to the other, I setup multiple certificates tied to different ssh domains. (for more on this,
-check out my [DotFiles](https://github.com/Flare576/dotfiles) project). This script allows me to easily check out
-projects using the different certs.
-
-## dvol (/python)
-
-D[oocker] Vol[ume] management can be a pain, especially when you want to attach one *and* copy the
-files out of the remote machine first. That's why
-```
-dvol --container my_container add /map/drive/address
-```
-Is so easy!
-
-## gac (/js)
-Git Add/Commit (gac) is a command I started with as a small alias and evolved into what it is now, a slick script that
-simplifies my git interactions. My most common usages are `gac -a`, `gac -f my.js src/firstSet.js tests/ofChanges` and,
-just plain `gac`.
-
 ## gmb (/shell)
 G[ei]t Master Branch (gmb) is a really simple script that basically amounts to a forceful `git checkout $branch;git pull`,
 for when I just want to start over :)
-
-## monitorjobs (/shell)
-Uses aws-cli and local config to monitor AWS CodePipeline jobs.
 
 ## mmb (/shell)
 Merge Master Branch (mmb) is a really script that basically updates my current branch with changes in "master".
@@ -44,19 +24,3 @@ There was a time when Zoom Meeting was installing a webserver on users' machines
 killed it and made Zoom think it was still there. Probably not super useful anymore, but I did post the link around,
 so #dontBreakLinks I guess.
 
-## sideLoad.js (/js)
-Utility script for making the other JS scripts work as shell commands! See details in the `js/README.md`!
-
-## template.js (/js)
-Exactly what the name implies; starting-point for new JS scripts.
-
-## test.js (/js)
-If things are going weird for your JS scripts, this script SHOULD just echo your inputs after setting up some common
-dependencies. If it doesn't.... well, maybe let me know?
-
-## vroom (/shell)
-This is simultaneous my favorite script and also the least portable. `vroom` by itself will try to start a nodeJS
-project by searching for a few common "start on my machine" commands, and pipe the output to `server.js` so you can
-look through it later. I've tried to make it more versatile by adding a project-specific config file (`.vroom`).
-
-hello world
