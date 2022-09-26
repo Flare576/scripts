@@ -1,0 +1,21 @@
+[submodule "monitorjobs"]
+	path = monitorjobs
+	url = https://github.com/Flare576/monitorjobs.git
+[submodule "git-clone"]
+	path = git-clone
+	url = https://github.com/Flare576/git-clone.git
+[submodule "gac"]
+	path = gac
+	url = https://github.com/Flare576/gac.git
+[submodule "dvol"]
+	path = dvol
+	url = https://github.com/Flare576/dvol.git
+[submodule "newScript"]
+	path = newScript
+	url = https://github.com/Flare576/newScript.git
+[submodule "vroom"]
+	path = vroom
+	url = https://github.com/Flare576/vroom.git
+[submodule "switch-theme"]
+	path = switch-theme
+	url = https://github.com/Flare576/switch-theme.git

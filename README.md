@@ -1,26 +1,36 @@
 # Flare576's Scripts
 
-> Note:  
-> Many of the scripts that used to live here have been split into their own repos, served
-> with [homebrew](https://brew.sh/) via [my tap](https://github.com/flare576/homebrew-scripts).
+It's important to know how your tools work, but sometimes (afterward), you just want to get things
+done _quickly_.  That's where scripts come in!
 
-It's important to know how your tools work, but sometimes (afterward), you just want to get things done _quickly_.
-That's where scripts come in! Here is a brief description of what you can expect from each of the scripts; full
-descriptions and usage details can be found in the `-h` help of each!
-
-## clearKube (/js)
-
-Sometimes when working with Docker and Kubernetes, you end up with pods that just don't die. ClearKube kills them. ded.
+The two scripts still housed directly in this project are git-related:
 
 ## gmb (/shell)
-G[ei]t Master Branch (gmb) is a really simple script that basically amounts to a forceful `git checkout $branch;git pull`,
-for when I just want to start over :)
+G[ei]t Master Branch (gmb) is a really simple script that basically amounts to a forceful `git
+checkout $branch;git pull`, for when I just want to start over :)
 
 ## mmb (/shell)
-Merge Master Branch (mmb) is a really script that basically updates my current branch with changes in "master".
+Merge Master Branch (mmb) is a really script that basically updates my current branch with changes
+in "master".
 
-## killZoom.sh (/shell)
-There was a time when Zoom Meeting was installing a webserver on users' machines without them knowing; this script
-killed it and made Zoom think it was still there. Probably not super useful anymore, but I did post the link around,
-so #dontBreakLinks I guess.
+Full descriptions and usage details can be found in the `-h` help of each!
 
+## Installation
+
+Each of the submodules to this project are stand-alone tools and can be installed on systems using
+[homebrew](https://brew.sh/) via my [my tap](https://github.com/flare576/homebrew-scripts).
+
+To use the two git-related scripts in `/bin`, clone this project and add the folder to your $PATH:
+
+```
+export PATH="$HOME/scripts/bin:$PATH"
+```
+
+For non-homebrew systems, clone the project with `--recurse-submodules` and add `nonbrew` to your
+path as well
+
+```
+export PATH="$HOME/scripts/nonbrew:$PATH"
+```
+
+Bear in mind that `gac`, `newScript`, and the cookie functionality of `jira-cli` require `npm`.
