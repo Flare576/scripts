@@ -19,3 +19,6 @@
 [submodule "switch-theme"]
 	path = switch-theme
 	url = https://github.com/Flare576/switch-theme.git
+[submodule "jira-cli"]
+	path = jira-cli
+	url = https://github.com/Flare576/jira-cli.git
