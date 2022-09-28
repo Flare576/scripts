@@ -15,16 +15,24 @@ while getopts ':hd' option; do
 done
 shift $((OPTIND -1))
 
-changes="$(git diff HEAD)"
-echo "ha $changes"
-BRANCH=master
-original=$(git branch | grep \* | cut -d ' ' -f2)
-if [ -n "$MASTER_OVERRIDE" ] ; then
+# Preference order is $1, $MASTER_OVERRIDE, main, master
+BRANCH="main"
+hasMaster="$(git branch | grep ' \+master$')"
+hasMain="$(git branch | grep ' \+main$')"
+if [ -n "$1" ]; then
+  BRANCH="$1"
+elif [ -n "$MASTER_OVERRIDE" ] ; then
   BRANCH="$MASTER_OVERRIDE"
+elif [ -n "$hasMaster" ]; then
+  if [ -n "$hasMain" ]; then
+    echo "Project has main and master branches; using main, but be careful."
+  else
+    BRANCH="master"
+  fi
 fi
-if [ -n "$1" ] ; then
-    BRANCH="$1"
-fi
+
+changes="$(git diff HEAD)"
+original=$(git branch | grep \* | cut -d ' ' -f2)
 
 if [ -n "$changes" ] && [ "$delete" != "true" ] ; then
   git stash
