@@ -4,9 +4,6 @@
 [submodule "git-clone"]
 	path = git-clone
 	url = https://github.com/Flare576/git-clone.git
-[submodule "gac"]
-	path = gac
-	url = https://github.com/Flare576/gac.git
 [submodule "dvol"]
 	path = dvol
 	url = https://github.com/Flare576/dvol.git
@@ -22,3 +19,6 @@
 [submodule "jira-cli"]
 	path = jira-cli
 	url = https://github.com/Flare576/jira-cli.git
+[submodule "git-gac"]
+	path = git-gac
+	url = https://github.com/Flare576/git-gac
